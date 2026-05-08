@@ -20,12 +20,12 @@ build() {
         --disable-plugin=pkg-resources \
         --include-package=click \
         --include-package=cryptography \
-        --output-filename=slink \
+        --output-filename=sli \
         slink.py
 }
 
 package() {
     cd "$startdir"
-    install -Dm755 slink "$pkgdir/usr/bin/slink"
+    install -Dm755 sli "$pkgdir/usr/bin/sli"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

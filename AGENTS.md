@@ -27,8 +27,8 @@
 ```
 .
 ├── slink.py              # 直接运行入口（将本地包加入 sys.path 后调用 cli.main）
-├── slink.bat             # Windows 快捷启动脚本
-├── setup.py              # setuptools 配置，定义入口点 slink / slink-ui
+├── sli.bat             # Windows 快捷启动脚本
+├── setup.py              # setuptools 配置，定义入口点 slink / sli-ui
 ├── requirements.txt      # 运行时依赖
 ├── PKGBUILD              # Arch Linux 打包脚本（使用 Nuitka 编译单文件二进制）
 ├── README.md             # 用户文档（中文）
@@ -36,7 +36,7 @@
 └── slink/                # 核心包
     ├── __init__.py       # 版本号 0.1.0
     ├── cli.py            # Click 命令行接口（主入口）
-    ├── gui.py            # tkinter GUI（slink-ui 入口）
+    ├── gui.py            # tkinter GUI（sli-ui 入口）
     ├── crypto.py         # 加密/解密、密钥派生、文件读写
     ├── store.py          # 基于加密文件的主机存储层（增删改查）
     ├── parser.py         # 明文配置文件解析器（支持多行块）
@@ -84,8 +84,8 @@ python setup.py install
 ### 运行方式
 
 - **CLI**：`python slink.py <command>` 或安装后直接使用 `slink <command>`
-- **GUI**：安装后使用 `slink-ui`
-- **Windows**：可直接双击 `slink.bat`，或在命令行运行
+- **GUI**：安装后使用 `sli-ui`
+- **Windows**：可直接双击 `sli.bat`，或在命令行运行
 
 ### 编译独立二进制
 
@@ -107,16 +107,16 @@ python -m nuitka \
 
 | 命令 | 作用 |
 |------|------|
-| `slink init` | 初始化主密码 |
-| `slink add <name> -h <host> -u <user>` | 添加主机 |
-| `slink list` | 列出所有主机 |
-| `slink show <name>` | 查看主机详情 |
-| `slink connect <name>` | 通过 SSH 连接主机 |
-| `slink edit <name>` | 编辑主机 |
-| `slink rm <name>` | 删除主机 |
-| `slink import` | 从 `~/.ssh/config` 导入 |
-| `slink encrypt <file>` | 加密明文配置文件 |
-| `slink decrypt <file.enc>` | 解密配置文件 |
+| `sli init` | 初始化主密码 |
+| `sli add <name> -h <host> -u <user>` | 添加主机 |
+| `sli list` | 列出所有主机 |
+| `sli show <name>` | 查看主机详情 |
+| `sli connect <name>` | 通过 SSH 连接主机 |
+| `sli edit <name>` | 编辑主机 |
+| `sli rm <name>` | 删除主机 |
+| `sli import` | 从 `~/.ssh/config` 导入 |
+| `sli encrypt <file>` | 加密明文配置文件 |
+| `sli decrypt <file.enc>` | 解密配置文件 |
 
 ## 代码风格与开发约定
 

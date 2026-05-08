@@ -25,62 +25,62 @@ pip install -r requirements.txt
 python setup.py install
 ```
 
-Windows users can also use the standalone binaries (`slink.exe` / `slink-ui.exe`) built with Nuitka.
+Windows users can also use the standalone binaries (`sli.exe` / `sli-ui.exe`) built with Nuitka.
 
 ## Quick Start
 
 ### 1. Initialize
 
 ```bash
-slink init
+sli init
 ```
 
 ### 2. Add a Host
 
 ```bash
-slink add myserver -h 192.168.1.100 -u root
+sli add myserver -h 192.168.1.100 -u root
 
 # with a private key file
-slink add myserver -h 192.168.1.100 -u root -i ~/.ssh/id_rsa
+sli add myserver -h 192.168.1.100 -u root -i ~/.ssh/id_rsa
 
 # with inline key text
-slink add myserver -h 192.168.1.100 -u root --key-text "-----BEGIN OPENSSH PRIVATE KEY-----\n..."
+sli add myserver -h 192.168.1.100 -u root --key-text "-----BEGIN OPENSSH PRIVATE KEY-----\n..."
 
 # with aliases
-slink add web1 -h 10.0.0.5 -u root -a www -a prod
+sli add web1 -h 10.0.0.5 -u root -a www -a prod
 ```
 
 ### 3. List / Show / Connect
 
 ```bash
-slink list              # table view
-slink list --json       # JSON output
-slink names             # list host names (no password needed)
-slink show myserver     # host details
-slink show myserver --json
-slink connect myserver  # connect via SSH
+sli list              # table view
+sli list --json       # JSON output
+sli names             # list host names (no password needed)
+sli show myserver     # host details
+sli show myserver --json
+sli connect myserver  # connect via SSH
 ```
 
 ### 4. Edit / Remove
 
 ```bash
-slink edit myserver -h new.ip.address -u newuser
-slink rm myserver --yes
+sli edit myserver -h new.ip.address -u newuser
+sli rm myserver --yes
 ```
 
 ### 5. Connect by Alias
 
 ```bash
-slink connect www       # resolves to 'web1' if 'www' is an alias
-slink show prod
-slink rm www --yes      # removes the main host record
+sli connect www       # resolves to 'web1' if 'www' is an alias
+sli show prod
+sli rm www --yes      # removes the main host record
 ```
 
 ### 6. Import from SSH Config
 
 ```bash
-slink import            # import all hosts from ~/.ssh/config
-slink import -h myserver # import a specific host
+sli import            # import all hosts from ~/.ssh/config
+sli import -h myserver # import a specific host
 ```
 
 ### 7. Single-File Quick Connect
@@ -105,29 +105,29 @@ key_file: ~/.ssh/id_rsa
 
 **Encrypted** (`host.txt.enc`):
 ```bash
-slink encrypt host.txt        # creates host.txt.enc
-slink decrypt host.txt.enc    # restores host.txt
+sli encrypt host.txt        # creates host.txt.enc
+sli decrypt host.txt.enc    # restores host.txt
 ```
 
 Connect directly:
 ```bash
-slink host.txt
-slink host.json
-slink host.txt.enc
+sli host.txt
+sli host.json
+sli host.txt.enc
 ```
 
 ### 8. Export / Import JSON
 
 ```bash
-slink export -o backup.json            # sanitized (no passwords/keys)
-slink export -o backup.json --with-secrets
-slink import-json backup.json
+sli export -o backup.json            # sanitized (no passwords/keys)
+sli export -o backup.json --with-secrets
+sli import-json backup.json
 ```
 
 ### 9. Change Master Password
 
 ```bash
-slink passwd
+sli passwd
 ```
 
 ## Environment Variables
@@ -136,8 +136,8 @@ Avoid typing your master password repeatedly:
 
 ```bash
 export SLINK_PASSWORD="your_master_password"
-slink list
-slink connect myserver
+sli list
+sli connect myserver
 ```
 
 > **Warning**: Storing passwords in environment variables is risky on shared machines.
@@ -157,8 +157,8 @@ Now user `alice` and user `bob` each get their own encrypted store:
 
 Admins can inspect any user's config:
 ```bash
-SLINK_USER=alice slink list
-SLINK_USER=bob slink show web1
+SLINK_USER=alice sli list
+SLINK_USER=bob sli show web1
 ```
 
 ## Data Files
@@ -177,19 +177,19 @@ All runtime data is stored in `~/.slink/`:
 ### Bash
 
 ```bash
-eval "$(_SLINK_COMPLETE=bash_source slink)"
+eval "$(_SLI_COMPLETE=bash_source sli)"
 ```
 
 ### Zsh
 
 ```zsh
-eval "$(_SLINK_COMPLETE=zsh_source slink)"
+eval "$(_SLI_COMPLETE=zsh_source sli)"
 ```
 
 ### Fish
 
 ```fish
-eval (env _SLINK_COMPLETE=fish_source slink)
+eval (env _SLI_COMPLETE=fish_source sli)
 ```
 
 Host name and alias completion works out of the box (reads `.show_direct`, no password required).
@@ -212,10 +212,10 @@ Host name and alias completion works out of the box (reads `.show_direct`, no pa
 
 ```bash
 # CLI
-python -m nuitka --standalone --include-package=click --include-package=cryptography --output-filename=slink slink.py
+python -m nuitka --standalone --include-package=click --include-package=cryptography --output-filename=sli slink.py
 
 # GUI
-python -m nuitka --standalone --enable-plugin=tk-inter --include-package=click --include-package=cryptography --output-filename=slink-ui slink-ui.py
+python -m nuitka --standalone --enable-plugin=tk-inter --include-package=click --include-package=cryptography --output-filename=sli-ui slink-ui.py
 ```
 
 ## License
