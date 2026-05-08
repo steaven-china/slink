@@ -20,7 +20,15 @@ class DecryptError(ValueError):
     pass
 
 
-DEFAULT_CONFIG_DIR = os.path.expanduser("~/.slink")
+def _get_default_config_dir() -> str:
+    """Return config dir, supports SLINK_USER for multi-user isolation."""
+    user = os.environ.get("SLINK_USER")
+    if user:
+        return os.path.expanduser(f"~/.slink/users/{user}")
+    return os.path.expanduser("~/.slink")
+
+
+DEFAULT_CONFIG_DIR = _get_default_config_dir()
 SALT_FILE = os.path.join(DEFAULT_CONFIG_DIR, "salt")
 HOSTS_FILE = os.path.join(DEFAULT_CONFIG_DIR, "hosts.enc")
 

@@ -142,6 +142,25 @@ slink connect myserver
 
 > **Warning**: Storing passwords in environment variables is risky on shared machines.
 
+### Multi-User Isolation (Jump Hosts / Shared Servers)
+
+On a shared bastion/jump host, each SSH user can have their own isolated slink configs:
+
+```bash
+# In ~/.bashrc or ~/.bash_profile on the jump host
+export SLINK_USER=$USER
+```
+
+Now user `alice` and user `bob` each get their own encrypted store:
+- Alice: `~/.slink/users/alice/hosts.enc`
+- Bob:   `~/.slink/users/bob/hosts.enc`
+
+Admins can inspect any user's config:
+```bash
+SLINK_USER=alice slink list
+SLINK_USER=bob slink show web1
+```
+
 ## Data Files
 
 All runtime data is stored in `~/.slink/`:
