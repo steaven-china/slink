@@ -3,6 +3,7 @@ Command-line interface for slink.
 """
 import json
 import os
+import subprocess
 import sys
 from getpass import getpass
 
@@ -137,9 +138,10 @@ def passwd_cmd(old_password):
 @click.option("--key-file", "-i", default=None, help="Path to SSH private key file")
 @click.option("--key-text", default=None, help="Paste private key text directly")
 @click.option("--alias", "-a", multiple=True, help="Alias names for this host (repeatable)")
+@click.option("--jump-host", "-J", multiple=True, help="Jump host alias or spec (repeatable for chaining)")
 @click.option("--extra-args", "-X", multiple=True, help="Extra SSH arguments (repeatable)")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
-def add_cmd(name, hostname, port, username, ask_password, key_file, key_text, alias, extra_args, master_password):
+def add_cmd(name, hostname, port, username, ask_password, key_file, key_text, alias, jump_host, extra_args, master_password):
     """Add a new host configuration."""
     if master_password is None:
         master_password = getpass("Master password: ")
@@ -159,6 +161,8 @@ def add_cmd(name, hostname, port, username, ask_password, key_file, key_text, al
         info["key_file"] = key_file
     if alias:
         info["aliases"] = list(alias)
+    if jump_host:
+        info["jump_host"] = list(jump_host)
     if extra_args:
         info["extra_args"] = list(extra_args)
 
@@ -229,7 +233,12 @@ def show_cmd(name, use_json, master_password):
     click.echo(f"Port:     {info.get('port', 22)}")
     click.echo(f"Username: {info.get('username')}")
     aliases = info.get('aliases', [])
+    aliases = info.get('aliases', [])
     click.echo(f"Aliases:  {', '.join(aliases) if aliases else 'None'}")
+    jump_hosts = info.get('jump_host', [])
+    if isinstance(jump_hosts, str):
+        jump_hosts = [jump_hosts]
+    click.echo(f"Jump host: {', '.join(jump_hosts) if jump_hosts else 'None'}")
     click.echo(f"Key file: {info.get('key_file') or ('<inline key>' if info.get('key') else 'None')}")
     click.echo(f"Password: {'<set>' if info.get('password') else 'None'}")
     extra = info.get('extra_args')
@@ -295,6 +304,34 @@ def import_cmd(config, host, master_password):
     click.echo(f"\nDone: {imported} imported, {skipped} skipped.")
 
 
+def _resolve_jump_chain(info: dict, password: str):
+    """Resolve jump host aliases into ssh -J compatible specs."""
+    jump_hosts = info.get("jump_host")
+    if not jump_hosts:
+        return
+    if isinstance(jump_hosts, str):
+        jump_hosts = [jump_hosts]
+    resolved = []
+    for jh in jump_hosts:
+        jh = jh.strip()
+        if not jh:
+            continue
+        jump_info = get_host(jh, password=password)
+        if jump_info:
+            jh_host = jump_info.get("hostname", jh)
+            jh_port = jump_info.get("port", 22)
+            jh_user = jump_info.get("username")
+            spec = jh_host
+            if jh_user:
+                spec = f"{jh_user}@{spec}"
+            if jh_port != 22:
+                spec = f"{spec}:{jh_port}"
+            resolved.append(spec)
+        else:
+            resolved.append(jh)
+    info["jump_host"] = resolved
+
+
 @cli.command(name="connect")
 @click.argument("name", shell_complete=_complete_host_names)
 @click.option("--extra-args", "-X", multiple=True, help="Extra SSH arguments (repeatable)")
@@ -307,6 +344,7 @@ def connect_cmd(name, extra_args, master_password):
     if not info:
         click.echo(f"Host '{name}' not found.", err=True)
         sys.exit(1)
+    _resolve_jump_chain(info, master_password)
     if extra_args:
         stored = info.get("extra_args", [])
         info["extra_args"] = stored + list(extra_args)
@@ -326,9 +364,10 @@ def connect_cmd(name, extra_args, master_password):
 @click.option("--key-file", "-i", default=None, help="Path to SSH private key file")
 @click.option("--key-text", default=None, help="Paste private key text directly")
 @click.option("--alias", "-a", multiple=True, help="Set alias names (repeatable, replaces existing)")
+@click.option("--jump-host", "-J", multiple=True, help="Set jump hosts (repeatable, replaces existing)")
 @click.option("--extra-args", "-X", multiple=True, help="Extra SSH arguments (repeatable)")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
-def edit_cmd(name, hostname, port, username, ask_password, key_file, key_text, alias, extra_args, master_password):
+def edit_cmd(name, hostname, port, username, ask_password, key_file, key_text, alias, jump_host, extra_args, master_password):
     """Edit an existing host (only provided fields are updated)."""
     if master_password is None:
         master_password = getpass("Master password: ")
@@ -353,6 +392,8 @@ def edit_cmd(name, hostname, port, username, ask_password, key_file, key_text, a
         info.pop("key", None)
     if alias:
         info["aliases"] = list(alias)
+    if jump_host:
+        info["jump_host"] = list(jump_host)
     if extra_args:
         info["extra_args"] = list(extra_args)
     upsert_host(name, info, password=master_password)

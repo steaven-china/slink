@@ -63,6 +63,7 @@ def connect(host_info: dict):
       - password (optional; only used for non-interactive modes or expect)
       - key      (optional; PEM private key content string)
       - key_file (optional; path to private key file)
+      - jump_host (optional; str or list of jump host spec like user@ip:port)
       - extra_args (optional; list of extra ssh flags)
     """
     hostname = host_info.get("hostname")
@@ -74,6 +75,7 @@ def connect(host_info: dict):
     password = host_info.get("password")
     key = host_info.get("key")
     key_file = host_info.get("key_file")
+    jump_host = host_info.get("jump_host")
     if key_file and not os.path.isfile(key_file):
         raise ValueError(f"Key file not found: {key_file}")
     extra_args = host_info.get("extra_args", [])
@@ -92,6 +94,15 @@ def connect(host_info: dict):
 
     if not ssh_cmd:
         ssh_cmd = ["ssh"]
+
+    # Handle jump host chain
+    if jump_host:
+        if isinstance(jump_host, list):
+            jump_str = ",".join(str(j) for j in jump_host)
+        else:
+            jump_str = str(jump_host)
+        ssh_cmd.extend(["-J", jump_str])
+
     ssh_cmd.extend(["-p", str(port)])
     ssh_cmd.extend(["-o", "StrictHostKeyChecking=accept-new"])
 
