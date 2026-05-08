@@ -78,12 +78,7 @@ class MLEngine:
         re.compile(r"init\s+0"),
     ]
 
-    def __init__(self, sessions: list[Session]):
-        self.sessions = {s.name: s for s in sessions}
-        self.mode = "broadcast"
-        self.focused: Optional[str] = None
-        self.running = False
-        self._cmd_buffer = ""
+
 
     def run(self):
         self.running = True
@@ -168,20 +163,45 @@ class MLEngine:
                     s.online = False
                 break
 
+    def __init__(self, sessions: list[Session]):
+        self.sessions = {s.name: s for s in sessions}
+        self.mode = "broadcast"
+        self.focused: Optional[str] = None
+        self.running = False
+        self._cmd_buffer = ""
+        self._awaiting_confirm = None
+
     def _handle_input(self, data: bytes):
         text = data.decode("utf-8", errors="replace")
-        # Accumulate command line
         if "\r" in text or "\n" in text:
-            line = self._cmd_buffer + text.replace("\r", "").replace("\n", "")
+            line = (self._cmd_buffer + text.replace("\r", "").replace("\n", "")).strip()
             self._cmd_buffer = ""
+
+            if self._awaiting_confirm:
+                orig, affected = self._awaiting_confirm
+                self._awaiting_confirm = None
+                if line.lower() == "yes":
+                    self._dispatch(orig.encode("utf-8"))
+                else:
+                    print(f"[ml] Cancelled: {orig}")
+                return
+
             if line.startswith(">"):
                 self._exec_cmd(line[1:].strip())
                 return
+
             if line:
+                dangerous, affected = self._check_dangerous(line)
+                if dangerous and affected > 0:
+                    print(f"\n⚠️  Dangerous command detected: {line}")
+                    print(f"   Affects {affected} host(s). Type 'yes' to proceed, anything else to cancel:")
+                    self._awaiting_confirm = (line, affected)
+                    return
                 self._dispatch(line.encode("utf-8"))
         else:
             self._cmd_buffer += text
-            self._dispatch(data)
+            if not self._awaiting_confirm:
+                self._dispatch(data)
 
     def _dispatch(self, data: bytes):
         if self.mode == "focus" and self.focused:

@@ -549,8 +549,21 @@ def jump_list_cmd(jump_host, master_password):
         sys.exit(1)
 
 
+def _complete_ml_targets(ctx, param, incomplete):
+    """Complete host names and @group references for sli ml."""
+    names = _get_show_direct_names()
+    try:
+        from .group import load_groups
+        groups = load_groups()
+        group_names = [f"@{name}" for name in groups.keys()]
+    except Exception:
+        group_names = []
+    all_names = names + group_names
+    return [n for n in all_names if n.startswith(incomplete)]
+
+
 @cli.command(name="ml")
-@click.argument("targets", nargs=-1, required=False, shell_complete=_complete_host_names)
+@click.argument("targets", nargs=-1, required=False, shell_complete=_complete_ml_targets)
 @click.option("--workspace", "-w", help="Load workspace by name")
 @click.option("--list-groups", is_flag=True, help="List all defined groups")
 @click.option("--list-workspaces", is_flag=True, help="List all saved workspaces")
