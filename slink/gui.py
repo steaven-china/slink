@@ -3,10 +3,11 @@ Simple tkinter GUI for slink.
 Usage: slink-ui
 """
 import os
+import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
 from .crypto import DecryptError
 from .ssh_wrapper import connect as ssh_connect
@@ -218,6 +219,7 @@ class SlinkGUI(tk.Tk):
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.listbox.bind("<<ListboxSelect>>", self._on_select)
         self.listbox.bind("<Double-Button-1>", lambda _e: self._connect())
+        self.bind("j", lambda _e: self._jump_list())
 
         btn_frame = tk.Frame(left)
         btn_frame.pack(fill=tk.X, pady=(10, 0))
@@ -226,6 +228,7 @@ class SlinkGUI(tk.Tk):
             ("Edit", self._edit_host),
             ("Delete", self._delete_host),
             ("Connect", self._connect),
+            ("Jump List", self._jump_list),
         ]:
             tk.Button(btn_frame, text=label, command=cmd).pack(fill=tk.X, pady=2)
 
@@ -353,6 +356,53 @@ class SlinkGUI(tk.Tk):
         if not info:
             return
         threading.Thread(target=ssh_connect, args=(info,), daemon=True).start()
+
+    def _jump_list(self):
+        if self.selected_name:
+            name = self.selected_name
+        else:
+            name = simpledialog.askstring("Jump List", "Enter jump host name:", parent=self)
+            if not name:
+                return
+        threading.Thread(target=self._do_jump_list, args=(name,), daemon=True).start()
+
+    def _do_jump_list(self, name):
+        try:
+            info = get_host(name, password=self.password)
+            if not info:
+                self.after(0, lambda: messagebox.showwarning("Not found", f"Host '{name}' not found."))
+                return
+
+            ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=accept-new"]
+            user = info.get("username")
+            host = info.get("hostname", name)
+            port = info.get("port", 22)
+            target = f"{user}@{host}" if user else host
+            if port != 22:
+                ssh_cmd.extend(["-p", str(port)])
+
+            ssh_cmd.extend([target, "cat", "~/.slink/.show_direct"])
+            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
+
+            if result.returncode != 0:
+                self.after(0, lambda: messagebox.showerror("Error", f"SSH failed:\n{result.stderr.strip()}"))
+                return
+
+            output = result.stdout.strip() or "(empty .show_direct)"
+            self.after(0, lambda: self._show_jump_list(name, output))
+        except Exception as exc:
+            self.after(0, lambda: messagebox.showerror("Error", str(exc)))
+
+    def _show_jump_list(self, name, output):
+        lines = [
+            f"Jump host: {name}",
+            "=" * 40,
+            output,
+        ]
+        self.detail_text.config(state=tk.NORMAL)
+        self.detail_text.delete("1.0", tk.END)
+        self.detail_text.insert(tk.END, "\n".join(lines))
+        self.detail_text.config(state=tk.DISABLED)
 
 
 def main():

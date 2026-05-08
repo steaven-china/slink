@@ -8,6 +8,7 @@ import os
 import stat
 import sys
 import tempfile
+import time
 from getpass import getpass
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -31,6 +32,11 @@ def _get_default_config_dir() -> str:
 DEFAULT_CONFIG_DIR = _get_default_config_dir()
 SALT_FILE = os.path.join(DEFAULT_CONFIG_DIR, "salt")
 HOSTS_FILE = os.path.join(DEFAULT_CONFIG_DIR, "hosts.enc")
+
+AGENT_HOSTS_FILE = os.path.join(DEFAULT_CONFIG_DIR, "agent_hosts.enc")
+AGENT_EXPIRES_FILE = os.path.join(DEFAULT_CONFIG_DIR, "agent_expires")
+AGENT_SALT_FILE = os.path.join(DEFAULT_CONFIG_DIR, "agent_salt")
+DEFAULT_AGENT_TTL = 300
 
 
 def _secure_chmod(path: str):
@@ -209,10 +215,112 @@ def save_hosts(hosts: dict, password: str = None):
         raise
 
 
+def _get_agent_salt() -> bytes:
+    _ensure_dir()
+    if os.path.exists(AGENT_SALT_FILE):
+        with open(AGENT_SALT_FILE, "rb") as f:
+            return f.read()
+    salt = os.urandom(16)
+    with open(AGENT_SALT_FILE, "wb") as f:
+        f.write(salt)
+    _secure_chmod(AGENT_SALT_FILE)
+    return salt
+
+
+def _clear_agent_files():
+    for f in (AGENT_HOSTS_FILE, AGENT_EXPIRES_FILE, AGENT_SALT_FILE):
+        if os.path.exists(f):
+            if sys.platform == "win32":
+                os.chmod(f, stat.S_IWRITE)
+            os.remove(f)
+
+
+def save_agent_hosts(hosts: dict, password: str, ttl: int = DEFAULT_AGENT_TTL):
+    """Save hosts with a temporary password, valid for ttl seconds."""
+    _ensure_dir()
+    salt = _get_agent_salt()
+    key = _derive_key(password, salt)
+    payload = json.dumps(hosts, ensure_ascii=False).encode("utf-8")
+    token = Fernet(key).encrypt(payload)
+
+    fd, tmp_path = tempfile.mkstemp(
+        dir=DEFAULT_CONFIG_DIR, prefix=".agent_hosts.", suffix=".tmp"
+    )
+    try:
+        os.write(fd, token)
+        os.close(fd)
+        _secure_chmod(tmp_path)
+        if sys.platform == "win32" and os.path.exists(AGENT_HOSTS_FILE):
+            os.chmod(AGENT_HOSTS_FILE, stat.S_IWRITE)
+        os.replace(tmp_path, AGENT_HOSTS_FILE)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+    expires = int(time.time()) + ttl
+    fd2, tmp2 = tempfile.mkstemp(
+        dir=DEFAULT_CONFIG_DIR, prefix=".agent_expires.", suffix=".tmp"
+    )
+    try:
+        os.write(fd2, str(expires).encode("utf-8"))
+        os.close(fd2)
+        _secure_chmod(tmp2)
+        if sys.platform == "win32" and os.path.exists(AGENT_EXPIRES_FILE):
+            os.chmod(AGENT_EXPIRES_FILE, stat.S_IWRITE)
+        os.replace(tmp2, AGENT_EXPIRES_FILE)
+    except Exception:
+        try:
+            os.close(fd2)
+        except OSError:
+            pass
+        try:
+            os.remove(tmp2)
+        except OSError:
+            pass
+        raise
+
+
+def load_agent_hosts(password: str) -> dict:
+    """Load agent hosts if not expired."""
+    if not os.path.exists(AGENT_EXPIRES_FILE) or not os.path.exists(AGENT_HOSTS_FILE):
+        raise DecryptError("No active agent password.")
+    with open(AGENT_EXPIRES_FILE, "r", encoding="utf-8") as f:
+        expires = int(f.read().strip())
+    if time.time() > expires:
+        _clear_agent_files()
+        raise DecryptError("Agent password expired.")
+    salt = _get_agent_salt()
+    key = _derive_key(password, salt)
+    with open(AGENT_HOSTS_FILE, "rb") as f:
+        token = f.read()
+    try:
+        payload = Fernet(key).decrypt(token)
+        return json.loads(payload.decode("utf-8"))
+    except InvalidToken:
+        raise DecryptError("Invalid agent password.")
+    except json.JSONDecodeError as exc:
+        raise DecryptError(f"Corrupted agent data: {exc}")
+
+
 def load_hosts(password: str = None) -> dict:
-    """Load hosts dictionary from encrypted file."""
+    """Load hosts dictionary from encrypted file. Falls back to agent hosts on temp password."""
     if not os.path.exists(HOSTS_FILE):
         return {}
     with open(HOSTS_FILE, "rb") as f:
         token = f.read()
-    return decrypt_data(token, password)
+    try:
+        return decrypt_data(token, password)
+    except DecryptError:
+        if password is not None:
+            try:
+                return load_agent_hosts(password)
+            except DecryptError:
+                pass
+        raise

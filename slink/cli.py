@@ -496,6 +496,59 @@ def import_json_cmd(file, master_password):
     click.echo(f"\nDone: {imported} imported, {skipped} skipped.")
 
 
+@cli.command(name="agent-pass")
+@click.option("--ttl", "-t", default=300, help="Time-to-live in seconds (default: 300)")
+@click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def agent_pass_cmd(ttl, master_password):
+    """Generate a temporary agent password for read-only access."""
+    import secrets
+    if master_password is None:
+        master_password = getpass("Master password: ")
+    try:
+        hosts = load_hosts(master_password)
+    except DecryptError:
+        click.echo("Invalid master password.", err=True)
+        sys.exit(1)
+    temp_password = secrets.token_urlsafe(16)[:16]
+    from .crypto import save_agent_hosts
+    save_agent_hosts(hosts, temp_password, ttl=ttl)
+    click.echo(f"Agent password: {temp_password}")
+    click.echo(f"Expires in: {ttl} seconds")
+    click.echo(f"Usage: SLINK_PASSWORD={temp_password} sli list")
+
+
+@cli.command(name="jump-list")
+@click.argument("jump_host", shell_complete=_complete_host_names)
+@click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def jump_list_cmd(jump_host, master_password):
+    """SSH into a jump host and list its downstream targets."""
+    if master_password is None:
+        master_password = getpass("Master password: ")
+    info = get_host(jump_host, password=master_password)
+    if not info:
+        click.echo(f"Host '{jump_host}' not found.", err=True)
+        sys.exit(1)
+
+    ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=accept-new"]
+    user = info.get("username")
+    host = info.get("hostname", jump_host)
+    port = info.get("port", 22)
+    target = f"{user}@{host}" if user else host
+    if port != 22:
+        ssh_cmd.extend(["-p", str(port)])
+
+    ssh_cmd.extend([target, "cat", "~/.slink/.show_direct"])
+    try:
+        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            click.echo(f"SSH failed: {result.stderr.strip()}", err=True)
+            sys.exit(1)
+        click.echo(result.stdout)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+
 def _resolve_argv_file(argv):
     """Detect if the first non-option arg is a file path for quick connect."""
     commands = set(cli.commands.keys())
@@ -515,7 +568,8 @@ def main():
     file_path = _resolve_argv_file(sys.argv)
     if file_path and file_path not in ("encrypt", "decrypt", "add", "list",
                                         "show", "rm", "connect", "edit", "init",
-                                        "names", "export", "import-json", "import"):
+                                        "names", "export", "import-json", "import",
+                                        "jump-list", "agent-pass"):
         info = _try_load_file(file_path)
         if info.get("hostname"):
             if info.get("key_file"):
