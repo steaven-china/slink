@@ -74,27 +74,31 @@ def _get_or_create_salt() -> bytes:
             return f.read()
 
 
-def _derive_key(password: str, salt: bytes) -> bytes:
+DEFAULT_ITERATIONS = 1_000_000
+LEGACY_ITERATIONS = 480_000
+
+
+def _derive_key(password: str, salt: bytes, iterations: int = DEFAULT_ITERATIONS) -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=480_000,
+        iterations=iterations,
     )
     return base64.urlsafe_b64encode(kdf.derive(password.encode("utf-8")))
 
 
-def _get_key_from_user(prompt: str = "Master password: ") -> bytes:
+def _get_key_from_user(prompt: str = "Master password: ", iterations: int = DEFAULT_ITERATIONS) -> bytes:
     password = getpass(prompt)
     salt = _get_or_create_salt()
-    return _derive_key(password, salt)
+    return _derive_key(password, salt, iterations)
 
 
-def _get_key(password: str = None) -> bytes:
+def _get_key(password: str = None, iterations: int = DEFAULT_ITERATIONS) -> bytes:
     if password is None:
-        return _get_key_from_user("Master password: ")
+        return _get_key_from_user("Master password: ", iterations)
     salt = _get_or_create_salt()
-    return _derive_key(password, salt)
+    return _derive_key(password, salt, iterations)
 
 
 def encrypt_text(plain_text: str, password: str = None) -> bytes:
@@ -111,7 +115,12 @@ def decrypt_text(token: bytes, password: str = None) -> str:
         payload = Fernet(key).decrypt(token)
         return payload.decode("utf-8")
     except InvalidToken:
-        raise DecryptError("Invalid master password or corrupted data.")
+        key_legacy = _get_key(password, iterations=LEGACY_ITERATIONS)
+        try:
+            payload = Fernet(key_legacy).decrypt(token)
+            return payload.decode("utf-8")
+        except InvalidToken:
+            raise DecryptError("Invalid master password or corrupted data.")
 
 
 def encrypt_file(plain_path: str, enc_path: str, password: str = None):
@@ -160,7 +169,12 @@ def decrypt_data(token: bytes, password: str = None) -> dict:
         payload = Fernet(key).decrypt(token)
         return json.loads(payload.decode("utf-8"))
     except InvalidToken:
-        raise DecryptError("Invalid master password or corrupted data.")
+        key_legacy = _get_key(password, iterations=LEGACY_ITERATIONS)
+        try:
+            payload = Fernet(key_legacy).decrypt(token)
+            return json.loads(payload.decode("utf-8"))
+        except InvalidToken:
+            raise DecryptError("Invalid master password or corrupted data.")
     except json.JSONDecodeError as exc:
         raise DecryptError(f"Corrupted data: not valid JSON ({exc})")
 

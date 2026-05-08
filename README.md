@@ -6,7 +6,7 @@ A lightweight SSH connection manager that encrypts your connection info locally 
 
 ## Features
 
-- **Encrypted Storage**: AES-128-CBC + HMAC (Fernet) encryption, key derived from your master password via PBKDF2-HMAC-SHA256 (480,000 iterations)
+- **Encrypted Storage**: AES-128-CBC + HMAC (Fernet) encryption, key derived from your master password via PBKDF2-HMAC-SHA256 (1,000,000 iterations)
 - **Master Password Protection**: All connection info is protected by a single master password
 - **Key Management**: Support private key file paths or inline key pasting
 - **Aliases**: Assign multiple aliases to a single host for quick access
@@ -204,7 +204,7 @@ Host name and alias completion works out of the box (reads `.show_direct`, no pa
 
 - The master password is **never stored on disk**; it is only used to derive the encryption key
 - A random salt prevents rainbow table attacks
-- PBKDF2 uses 480,000 iterations
+- PBKDF2 uses 1,000,000 iterations (reads legacy 480,000 data transparently)
 - Temporary private key files are deleted immediately after SSH disconnect
 - Atomic writes prevent data corruption during power loss
 
