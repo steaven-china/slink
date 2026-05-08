@@ -58,7 +58,7 @@ def _try_load_file(file_path: str) -> dict:
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="slink")
+@click.version_option(version=__version__, prog_name="sli")
 def cli():
     """slink - Secure SSH Connection Manager"""
     pass
