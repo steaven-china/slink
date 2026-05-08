@@ -137,7 +137,10 @@ class MLEngine:
             stop.wait(0.01)
 
     def _win_stdout(self, session: Session, stop: threading.Event):
-        while session.online and not stop.is_set():
+        while not stop.is_set():
+            with self._lock:
+                if not session.online:
+                    break
             try:
                 data = session.proc.stdout.read(1)
                 if not data:
@@ -145,7 +148,8 @@ class MLEngine:
                 self._display(session, data)
             except Exception:
                 break
-        session.online = False
+        with self._lock:
+            session.online = False
 
     # --- I/O handling ------------------------------------------------------
     def _handle_fd(self, fd):
@@ -170,52 +174,56 @@ class MLEngine:
         self.running = False
         self._cmd_buffer = ""
         self._awaiting_confirm = None
+        self._lock = threading.RLock()
 
     def _handle_input(self, data: bytes):
-        text = data.decode("utf-8", errors="replace")
-        if "\r" in text or "\n" in text:
-            line = (self._cmd_buffer + text.replace("\r", "").replace("\n", "")).strip()
-            self._cmd_buffer = ""
+        with self._lock:
+            text = data.decode("utf-8", errors="replace")
+            if "\r" in text or "\n" in text:
+                line = (self._cmd_buffer + text.replace("\r", "").replace("\n", "")).strip()
+                self._cmd_buffer = ""
 
-            if self._awaiting_confirm:
-                orig, affected = self._awaiting_confirm
-                self._awaiting_confirm = None
-                if line.lower() == "yes":
-                    self._dispatch(orig.encode("utf-8"))
-                else:
-                    print(f"[ml] Cancelled: {orig}")
-                return
-
-            if line.startswith(">"):
-                self._exec_cmd(line[1:].strip())
-                return
-
-            if line:
-                dangerous, affected = self._check_dangerous(line)
-                if dangerous and affected > 0:
-                    print(f"\n⚠️  Dangerous command detected: {line}")
-                    print(f"   Affects {affected} host(s). Type 'yes' to proceed, anything else to cancel:")
-                    self._awaiting_confirm = (line, affected)
+                if self._awaiting_confirm:
+                    orig, affected = self._awaiting_confirm
+                    self._awaiting_confirm = None
+                    if line.lower() == "yes":
+                        self._dispatch(orig.encode("utf-8"))
+                    else:
+                        print(f"[ml] Cancelled: {orig}")
                     return
-                self._dispatch(line.encode("utf-8"))
-        else:
-            self._cmd_buffer += text
-            if not self._awaiting_confirm:
-                self._dispatch(data)
+
+                if line.startswith(">"):
+                    self._exec_cmd(line[1:].strip())
+                    return
+
+                if line:
+                    dangerous, affected = self._check_dangerous(line)
+                    if dangerous and affected > 0:
+                        print(f"\n⚠️  Dangerous command detected: {line}")
+                        print(f"   Affects {affected} host(s). Type 'yes' to proceed, anything else to cancel:")
+                        self._awaiting_confirm = (line, affected)
+                        return
+                    self._dispatch(line.encode("utf-8"))
+            else:
+                self._cmd_buffer += text
+                if not self._awaiting_confirm:
+                    self._dispatch(data)
 
     def _dispatch(self, data: bytes):
-        if self.mode == "focus" and self.focused:
-            s = self.sessions.get(self.focused)
-            if s and s.online and not s.blocked:
-                s.send(data)
-            return
-        for s in self.sessions.values():
-            if s.online and not s.blocked:
-                s.send(data)
+        with self._lock:
+            if self.mode == "focus" and self.focused:
+                s = self.sessions.get(self.focused)
+                if s and s.online and not s.blocked:
+                    s.send(data)
+                return
+            for s in self.sessions.values():
+                if s.online and not s.blocked:
+                    s.send(data)
 
     def _display(self, session: Session, data: bytes):
-        sys.stdout.buffer.write(f"[\u2190 {session.name}] ".encode() + data)
-        sys.stdout.flush()
+        with self._lock:
+            sys.stdout.buffer.write(f"[\u2190 {session.name}] ".encode() + data)
+            sys.stdout.flush()
 
     def _is_raw(self, text: str) -> bool:
         return any(p.search(text) for p in self.RAW_TRIGGERS)
@@ -244,57 +252,65 @@ class MLEngine:
             print(f"[ml] Unknown command: {cmd}")
 
     def cmd_block(self, args):
-        targets = self.sessions if not args or args[0] == "all" else args
-        for name in targets:
-            s = self.sessions.get(name)
-            if s:
-                s.blocked = True
-                print(f"[\u26a1 {name} blocked]")
+        with self._lock:
+            targets = list(self.sessions.keys()) if not args or args[0] == "all" else args
+            for name in targets:
+                s = self.sessions.get(name)
+                if s:
+                    s.blocked = True
+                    print(f"[\u26a1 {name} blocked]")
 
     def cmd_unblock(self, args):
-        targets = self.sessions if not args or args[0] == "all" else args
-        for name in targets:
-            s = self.sessions.get(name)
-            if s:
-                s.blocked = False
-                print(f"[\u26a1 {name} resumed]")
+        with self._lock:
+            targets = list(self.sessions.keys()) if not args or args[0] == "all" else args
+            for name in targets:
+                s = self.sessions.get(name)
+                if s:
+                    s.blocked = False
+                    print(f"[\u26a1 {name} resumed]")
 
     def cmd_focus(self, args):
-        if args:
-            self.focused = args[0]
-            self.mode = "focus"
-            print(f"[\u26a1 Focused on {args[0]}]")
+        with self._lock:
+            if args:
+                self.focused = args[0]
+                self.mode = "focus"
+                print(f"[\u26a1 Focused on {args[0]}]")
 
     def cmd_broadcast(self, args):
-        self.focused = None
-        self.mode = "broadcast"
-        print("[\u26a1 Broadcast mode]")
+        with self._lock:
+            self.focused = None
+            self.mode = "broadcast"
+            print("[\u26a1 Broadcast mode]")
 
     def cmd_list(self, args):
-        for name, s in self.sessions.items():
-            st = "ONLINE" if s.online else "OFFLINE"
-            blk = " [BLOCKED]" if s.blocked else ""
-            print(f"  {name}: {st}{blk}")
+        with self._lock:
+            for name, s in self.sessions.items():
+                st = "ONLINE" if s.online else "OFFLINE"
+                blk = " [BLOCKED]" if s.blocked else ""
+                print(f"  {name}: {st}{blk}")
 
     def cmd_status(self, args):
-        for name, s in self.sessions.items():
-            print(f"  {name}: last={s.last_cmd or 'N/A'} raw={s.in_raw_mode}")
+        with self._lock:
+            for name, s in self.sessions.items():
+                print(f"  {name}: last={s.last_cmd or 'N/A'} raw={s.in_raw_mode}")
 
     def cmd_save(self, args):
         if not args:
             print("[ml] Usage: >save <name>")
             return
         from .workspace import save_workspace, build_workspace
-        data = build_workspace(
-            args[0],
-            list(self.sessions.keys()),
-            [n for n, s in self.sessions.items() if s.blocked],
-            self.focused,
-            self.mode,
-        )
+        with self._lock:
+            data = build_workspace(
+                args[0],
+                list(self.sessions.keys()),
+                [n for n, s in self.sessions.items() if s.blocked],
+                self.focused,
+                self.mode,
+            )
         save_workspace(data, args[0])
         print(f"[\u26a1 Workspace '{args[0]}' saved]")
 
     def cmd_exit(self, args):
         print("[ml] Disconnecting all sessions...")
-        self.running = False
+        with self._lock:
+            self.running = False
