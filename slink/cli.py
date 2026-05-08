@@ -549,6 +549,121 @@ def jump_list_cmd(jump_host, master_password):
         sys.exit(1)
 
 
+@cli.command(name="ml")
+@click.argument("targets", nargs=-1, required=False, shell_complete=_complete_host_names)
+@click.option("--workspace", "-w", help="Load workspace by name")
+@click.option("--list-groups", is_flag=True, help="List all defined groups")
+@click.option("--list-workspaces", is_flag=True, help="List all saved workspaces")
+@click.option("--user", "-u", help="Override username")
+@click.option("--port", "-p", type=int, help="Override port")
+@click.option("--dry-run", is_flag=True, help="Show what would be connected")
+@click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def ml_cmd(targets, workspace, list_groups, list_workspaces, user, port, dry_run, master_password):
+    """Multi-login: connect to multiple hosts in a unified interactive session."""
+    if list_groups:
+        from .group import load_groups
+        groups = load_groups()
+        if not groups:
+            click.echo("No groups defined.")
+            return
+        for name, info in sorted(groups.items()):
+            hosts = ", ".join(info.get("hosts", []))
+            subgroups = ", ".join(info.get("groups", []))
+            click.echo(f"{name}: hosts=[{hosts}] groups=[{subgroups}]")
+        return
+
+    if list_workspaces:
+        from .workspace import list_workspaces
+        names = list_workspaces()
+        if not names:
+            click.echo("No workspaces saved.")
+            return
+        for n in names:
+            click.echo(f"  {n}")
+        return
+
+    if master_password is None:
+        master_password = getpass("Master password: ")
+
+    hosts_to_connect = []
+    ws = None
+
+    # Auto-load workspace from current directory
+    if not targets and not workspace:
+        from .workspace import find_workspace_file
+        ws_file = find_workspace_file()
+        if ws_file:
+            with open(ws_file, "r", encoding="utf-8") as f:
+                ws = json.load(f)
+            hosts_to_connect = ws.get("hosts", [])
+            click.echo(f"[Auto-loaded workspace: {ws.get('name', 'unknown')}]")
+        else:
+            click.echo("No targets specified and no .sli-workspace.json found.", err=True)
+            sys.exit(1)
+
+    if workspace:
+        from .workspace import load_workspace
+        ws = load_workspace(workspace)
+        hosts_to_connect = ws.get("hosts", [])
+
+    if targets:
+        from .group import expand_targets, load_groups
+        all_hosts = list_hosts(password=master_password)
+        groups = load_groups()
+        hosts_to_connect = expand_targets(list(targets), groups, all_hosts)
+
+    if not hosts_to_connect:
+        click.echo("No hosts to connect.", err=True)
+        sys.exit(1)
+
+    from .store import get_host
+    from .ml_engine import Session, MLEngine
+
+    sessions = []
+    for name in hosts_to_connect:
+        info = get_host(name, password=master_password)
+        if not info:
+            click.echo(f"Host '{name}' not found.", err=True)
+            continue
+        if user:
+            info = dict(info)
+            info["username"] = user
+        if port:
+            info = dict(info)
+            info["port"] = port
+
+        if dry_run:
+            click.echo(f"[dry-run] {name}: {info.get('username')}@{info.get('hostname')}:{info.get('port', 22)}")
+            continue
+
+        s = Session(name, info)
+        try:
+            s.connect()
+            sessions.append(s)
+            click.echo(f"[Connected to {name}]")
+        except Exception as exc:
+            click.echo(f"[Failed {name}]: {exc}", err=True)
+
+    if dry_run or not sessions:
+        return
+
+    engine = MLEngine(sessions)
+
+    # Restore workspace state
+    if ws:
+        for name in ws.get("blocked", []):
+            engine.cmd_block([name])
+        if ws.get("mode") == "focus" and ws.get("focused"):
+            engine.cmd_focus([ws["focused"]])
+
+    try:
+        engine.run()
+    except KeyboardInterrupt:
+        click.echo("\n[Interrupted]")
+    finally:
+        engine._cleanup()
+
+
 def _resolve_argv_file(argv):
     """Detect if the first non-option arg is a file path for quick connect."""
     commands = set(cli.commands.keys())
@@ -569,7 +684,7 @@ def main():
     if file_path and file_path not in ("encrypt", "decrypt", "add", "list",
                                         "show", "rm", "connect", "edit", "init",
                                         "names", "export", "import-json", "import",
-                                        "jump-list", "agent-pass"):
+                                        "jump-list", "agent-pass", "ml"):
         info = _try_load_file(file_path)
         if info.get("hostname"):
             if info.get("key_file"):

@@ -136,6 +136,26 @@ python -m nuitka \
 - `store.py`：并发文件锁下的增删改查
 - `ssh_config_parser.py`：不同风格的 SSH config 解析
 
+## Agent 工作模式（必读）
+
+当使用 `Agent` 工具调用子代理时，遵循以下原则：
+
+### 并行 vs 串行
+
+- **独立任务必须并行**：多个 explore agent 搜索不同模块、多个文件同时写入、编译/测试/下载等耗时操作，**一律 `run_in_background=true` 同时扔出去**。
+- **有依赖的任务链才串行**：步骤 B 需要步骤 A 的结果时，才等 A 完成后再启动 B。
+- **默认 conservatism 是 bug**：不要因为有"等结果再决策"的惯性就串行一切。先画依赖图，能并行的绝不浪费用户时间。
+
+### 判断标准
+
+| 场景 | 处理方式 |
+|------|---------|
+| 多个 explore agent 扫不同目录 | 并行 background |
+| 写多个独立文件 | 并行 WriteFile（无需 agent） |
+| 编译 + 测试 + lint | 并行 background Shell |
+| 需要前一步输出才能决策 | 串行 foreground |
+| 用户明确催进度 | 全部 background，主线程继续对话 |
+
 ## 安全注意事项
 
 - **主密码从不存储在磁盘上**，仅用于实时派生加密密钥。用户可通过 `SLINK_PASSWORD` 环境变量传入，但在共享环境中存在风险。
