@@ -41,7 +41,16 @@ def _secure_chmod(path: str):
 
 
 def _ensure_dir():
-    os.makedirs(DEFAULT_CONFIG_DIR, mode=0o700, exist_ok=True)
+    dir_path = DEFAULT_CONFIG_DIR
+    os.makedirs(dir_path, mode=0o700, exist_ok=True)
+    if sys.platform != "win32":
+        os.chmod(dir_path, 0o700)
+        # Ensure parent dirs down to ~/.slink are also secure
+        parent = os.path.dirname(dir_path)
+        root = os.path.expanduser("~/.slink")
+        while parent and os.path.exists(parent) and parent.startswith(root):
+            os.chmod(parent, 0o700)
+            parent = os.path.dirname(parent)
 
 
 def _get_or_create_salt() -> bytes:

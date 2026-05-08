@@ -16,8 +16,9 @@ if sys.platform == "win32":
         def acquire(self):
             dir_path = os.path.dirname(self.path)
             if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
+                os.makedirs(dir_path, mode=0o700, exist_ok=True)
             self._fd = os.open(self.path, os.O_CREAT | os.O_RDWR)
+            os.chmod(self.path, 0o600)
             msvcrt.locking(self._fd, msvcrt.LK_LOCK, 1)
 
         def release(self):
@@ -50,8 +51,9 @@ else:
         def acquire(self):
             dir_path = os.path.dirname(self.path)
             if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
+                os.makedirs(dir_path, mode=0o700, exist_ok=True)
             self._fd = os.open(self.path, os.O_CREAT | os.O_RDWR)
+            os.chmod(self.path, 0o600)
             fcntl.flock(self._fd, fcntl.LOCK_EX)
 
         def release(self):

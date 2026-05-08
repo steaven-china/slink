@@ -32,3 +32,5 @@ dist/
 Thumbs.db
 
 test_wsl.sh
+
+test_perm.sh

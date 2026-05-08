@@ -44,6 +44,8 @@ def _update_show_direct(hosts: dict):
             f.write(f"    {name}\n")
             for alias in sorted(hosts[name].get("aliases", [])):
                 f.write(f"    {alias}\n")
+    if sys.platform != "win32":
+        os.chmod(SHOW_DIRECT_FILE, 0o600)
 
 
 def get_show_direct_names() -> list:
