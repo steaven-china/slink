@@ -144,6 +144,8 @@ def decrypt_data(token: bytes, password: str = None) -> dict:
         return json.loads(payload.decode("utf-8"))
     except InvalidToken:
         raise DecryptError("Invalid master password or corrupted data.")
+    except json.JSONDecodeError as exc:
+        raise DecryptError(f"Corrupted data: not valid JSON ({exc})")
 
 
 def save_hosts(hosts: dict, password: str = None):

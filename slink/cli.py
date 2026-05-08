@@ -1,6 +1,7 @@
 """
 Command-line interface for slink.
 """
+import json
 import os
 import sys
 from getpass import getpass
@@ -16,7 +17,7 @@ from .store import add_host, get_host, list_hosts, remove_host, upsert_host
 
 
 def _try_load_file(file_path: str) -> dict:
-    """Try to load a host file (plain text or encrypted .enc)."""
+    """Try to load a host file (plain text, JSON, or encrypted .enc)."""
     if file_path.lower().endswith(".enc"):
         password = os.environ.get("SLINK_PASSWORD")
         if password is None:
@@ -28,11 +29,21 @@ def _try_load_file(file_path: str) -> dict:
             sys.exit(1)
         return parse_config(plain_text)
 
+    if file_path.lower().endswith(".json"):
+        with open(file_path, "r", encoding="utf-8-sig") as f:
+            return json.load(f)
+
     with open(file_path, "r", encoding="utf-8") as f:
         text = f.read()
     info = parse_config(text)
     if info.get("hostname"):
         return info
+
+    # Try JSON as fallback for files without recognized extension
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
 
     password = os.environ.get("SLINK_PASSWORD")
     if password is None:
@@ -41,7 +52,7 @@ def _try_load_file(file_path: str) -> dict:
         plain_text = decrypt_file_to_text(file_path, password)
         return parse_config(plain_text)
     except DecryptError:
-        click.echo("Could not parse file as plain text or decrypt it.", err=True)
+        click.echo("Could not parse file as plain text, JSON, or decrypt it.", err=True)
         sys.exit(1)
 
 
@@ -50,6 +61,27 @@ def _try_load_file(file_path: str) -> dict:
 def cli():
     """slink - Secure SSH Connection Manager"""
     pass
+
+
+def _complete_host_names(ctx, param, incomplete):
+    """Shell completion for host names (reads .show_direct first, no password needed)."""
+    from .store import get_show_direct_names
+    try:
+        names = get_show_direct_names()
+        if names:
+            return [k for k in names if k.startswith(incomplete)]
+    except Exception:
+        pass
+    # fallback to encrypted store
+    password = os.environ.get("SLINK_PASSWORD")
+    if not password:
+        return []
+    try:
+        from .crypto import load_hosts
+        hosts = load_hosts(password=password)
+        return [k for k in hosts if k.startswith(incomplete)]
+    except Exception:
+        return []
 
 
 @cli.command()
@@ -65,8 +97,35 @@ def init():
         click.echo("Password cannot be empty.", err=True)
         sys.exit(1)
     # Create an empty encrypted store to validate the password works
-    save_hosts({}, password=pw1)
+    try:
+        save_hosts({}, password=pw1)
+    except OSError as exc:
+        click.echo(f"Failed to initialize slink: {exc}", err=True)
+        sys.exit(1)
     click.echo("slink initialized successfully.")
+
+
+@cli.command(name="passwd")
+@click.option("--old-password", envvar="SLINK_PASSWORD", default=None, help="Current master password")
+def passwd_cmd(old_password):
+    """Change the master password."""
+    if old_password is None:
+        old_password = getpass("Current master password: ")
+    new_pw1 = getpass("New master password: ")
+    new_pw2 = getpass("Confirm new master password: ")
+    if new_pw1 != new_pw2:
+        click.echo("Passwords do not match.", err=True)
+        sys.exit(1)
+    if not new_pw1:
+        click.echo("Password cannot be empty.", err=True)
+        sys.exit(1)
+    try:
+        from .store import rotate_password
+        rotate_password(old_password, new_pw1)
+        click.echo("Master password changed successfully.")
+    except DecryptError:
+        click.echo("Invalid current master password.", err=True)
+        sys.exit(1)
 
 
 @cli.command(name="add")
@@ -77,9 +136,10 @@ def init():
 @click.option("--ask-password", is_flag=True, help="Prompt for SSH password interactively")
 @click.option("--key-file", "-i", default=None, help="Path to SSH private key file")
 @click.option("--key-text", default=None, help="Paste private key text directly")
+@click.option("--alias", "-a", multiple=True, help="Alias names for this host (repeatable)")
 @click.option("--extra-args", "-X", multiple=True, help="Extra SSH arguments (repeatable)")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
-def add_cmd(name, hostname, port, username, ask_password, key_file, key_text, extra_args, master_password):
+def add_cmd(name, hostname, port, username, ask_password, key_file, key_text, alias, extra_args, master_password):
     """Add a new host configuration."""
     if master_password is None:
         master_password = getpass("Master password: ")
@@ -97,6 +157,8 @@ def add_cmd(name, hostname, port, username, ask_password, key_file, key_text, ex
         info["key"] = key_text
     elif key_file:
         info["key_file"] = key_file
+    if alias:
+        info["aliases"] = list(alias)
     if extra_args:
         info["extra_args"] = list(extra_args)
 
@@ -110,15 +172,34 @@ def add_cmd(name, hostname, port, username, ask_password, key_file, key_text, ex
             click.echo(f"Host '{name}' updated.")
 
 
+@cli.command(name="names")
+def names_cmd():
+    """List all stored host names (no password required)."""
+    from .store import get_show_direct_names
+    names = get_show_direct_names()
+    if not names:
+        click.echo("No hosts stored yet.")
+        return
+    for name in names:
+        click.echo(name)
+
+
 @cli.command(name="list")
+@click.option("--json", "use_json", is_flag=True, help="Output as JSON")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
-def list_cmd(master_password):
+def list_cmd(use_json, master_password):
     """List all stored hosts."""
     if master_password is None:
         master_password = getpass("Master password: ")
     hosts = list_hosts(password=master_password)
     if not hosts:
-        click.echo("No hosts stored yet.")
+        if use_json:
+            click.echo("{}")
+        else:
+            click.echo("No hosts stored yet.")
+        return
+    if use_json:
+        click.echo(json.dumps(hosts, ensure_ascii=False, indent=2))
         return
     click.echo(f"{'Name':<20} {'Hostname':<25} {'Port':<6} {'User':<15}")
     click.echo("-" * 70)
@@ -129,9 +210,10 @@ def list_cmd(master_password):
 
 
 @cli.command(name="show")
-@click.argument("name")
+@click.argument("name", shell_complete=_complete_host_names)
+@click.option("--json", "use_json", is_flag=True, help="Output as JSON")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
-def show_cmd(name, master_password):
+def show_cmd(name, use_json, master_password):
     """Show details for a single host (passwords hidden)."""
     if master_password is None:
         master_password = getpass("Master password: ")
@@ -139,10 +221,15 @@ def show_cmd(name, master_password):
     if not info:
         click.echo(f"Host '{name}' not found.", err=True)
         sys.exit(1)
+    if use_json:
+        click.echo(json.dumps({name: info}, ensure_ascii=False, indent=2))
+        return
     click.echo(f"Name:     {name}")
     click.echo(f"Hostname: {info.get('hostname')}")
     click.echo(f"Port:     {info.get('port', 22)}")
     click.echo(f"Username: {info.get('username')}")
+    aliases = info.get('aliases', [])
+    click.echo(f"Aliases:  {', '.join(aliases) if aliases else 'None'}")
     click.echo(f"Key file: {info.get('key_file') or ('<inline key>' if info.get('key') else 'None')}")
     click.echo(f"Password: {'<set>' if info.get('password') else 'None'}")
     extra = info.get('extra_args')
@@ -150,7 +237,7 @@ def show_cmd(name, master_password):
 
 
 @cli.command(name="rm")
-@click.argument("name")
+@click.argument("name", shell_complete=_complete_host_names)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
 def rm_cmd(name, yes, master_password):
@@ -175,7 +262,11 @@ def import_cmd(config, host, master_password):
     """Import hosts from ~/.ssh/config into slink encrypted store."""
     if master_password is None:
         master_password = getpass("Master password: ")
-    hosts = parse_ssh_config(config)
+    try:
+        hosts = parse_ssh_config(config)
+    except PermissionError as exc:
+        click.echo(f"Permission denied reading SSH config: {exc}", err=True)
+        sys.exit(1)
     if not hosts:
         click.echo("No hosts found in SSH config.", err=True)
         sys.exit(1)
@@ -205,7 +296,7 @@ def import_cmd(config, host, master_password):
 
 
 @cli.command(name="connect")
-@click.argument("name")
+@click.argument("name", shell_complete=_complete_host_names)
 @click.option("--extra-args", "-X", multiple=True, help="Extra SSH arguments (repeatable)")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
 def connect_cmd(name, extra_args, master_password):
@@ -219,19 +310,25 @@ def connect_cmd(name, extra_args, master_password):
     if extra_args:
         stored = info.get("extra_args", [])
         info["extra_args"] = stored + list(extra_args)
-    ssh_connect(info)
+    try:
+        ssh_connect(info)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
 
 
 @cli.command(name="edit")
-@click.argument("name")
+@click.argument("name", shell_complete=_complete_host_names)
 @click.option("--hostname", "-h", default=None, help="Remote host address")
 @click.option("--port", "-p", default=None, type=int, help="SSH port")
 @click.option("--username", "-u", default=None, help="SSH username")
 @click.option("--ask-password", is_flag=True, help="Prompt for SSH password interactively")
 @click.option("--key-file", "-i", default=None, help="Path to SSH private key file")
+@click.option("--key-text", default=None, help="Paste private key text directly")
+@click.option("--alias", "-a", multiple=True, help="Set alias names (repeatable, replaces existing)")
 @click.option("--extra-args", "-X", multiple=True, help="Extra SSH arguments (repeatable)")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
-def edit_cmd(name, hostname, port, username, ask_password, key_file, extra_args, master_password):
+def edit_cmd(name, hostname, port, username, ask_password, key_file, key_text, alias, extra_args, master_password):
     """Edit an existing host (only provided fields are updated)."""
     if master_password is None:
         master_password = getpass("Master password: ")
@@ -248,9 +345,14 @@ def edit_cmd(name, hostname, port, username, ask_password, key_file, extra_args,
     if ask_password:
         ssh_password = getpass("SSH password: ")
         info["password"] = ssh_password
-    if key_file is not None:
+    if key_text:
+        info["key"] = key_text
+        info.pop("key_file", None)
+    elif key_file is not None:
         info["key_file"] = key_file
         info.pop("key", None)
+    if alias:
+        info["aliases"] = list(alias)
     if extra_args:
         info["extra_args"] = list(extra_args)
     upsert_host(name, info, password=master_password)
@@ -297,6 +399,62 @@ def decrypt_cmd(file, output, force, master_password):
     click.echo(f"Decrypted: {file} -> {output}")
 
 
+@cli.command(name="export")
+@click.option("--output", "-o", required=True, type=click.Path(), help="Output JSON file path")
+@click.option("--with-secrets", is_flag=True, help="Include passwords and keys in export")
+@click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def export_cmd(output, with_secrets, master_password):
+    """Export all hosts to a JSON file."""
+    if master_password is None:
+        master_password = getpass("Master password: ")
+    hosts = list_hosts(password=master_password)
+    if not hosts:
+        click.echo("No hosts to export.", err=True)
+        sys.exit(1)
+    data = {}
+    for name, info in hosts.items():
+        data[name] = dict(info)
+        if not with_secrets:
+            data[name].pop("password", None)
+            data[name].pop("key", None)
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    click.echo(f"Exported {len(data)} host(s) to {output}")
+
+
+@cli.command(name="import-json")
+@click.argument("file", type=click.Path(exists=True))
+@click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def import_json_cmd(file, master_password):
+    """Import hosts from a JSON file into slink encrypted store."""
+    if master_password is None:
+        master_password = getpass("Master password: ")
+    with open(file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, list):
+        data = {item.get("name", f"host_{i}"): item for i, item in enumerate(data)}
+    if not isinstance(data, dict):
+        click.echo("Invalid JSON format: expected a dict or list.", err=True)
+        sys.exit(1)
+    imported = 0
+    skipped = 0
+    for name, info in data.items():
+        if not isinstance(info, dict):
+            continue
+        try:
+            add_host(str(name), info, password=master_password)
+            imported += 1
+            click.echo(f"  Imported: {name}")
+        except ValueError:
+            if click.confirm(f"  Host '{name}' already exists. Overwrite?"):
+                upsert_host(str(name), info, password=master_password)
+                imported += 1
+                click.echo(f"  Overwritten: {name}")
+            else:
+                skipped += 1
+    click.echo(f"\nDone: {imported} imported, {skipped} skipped.")
+
+
 def _resolve_argv_file(argv):
     """Detect if the first non-option arg is a file path for quick connect."""
     commands = set(cli.commands.keys())
@@ -315,7 +473,8 @@ def main():
     # Quick-connect: slink host.txt / slink host.enc
     file_path = _resolve_argv_file(sys.argv)
     if file_path and file_path not in ("encrypt", "decrypt", "add", "list",
-                                        "show", "rm", "connect", "edit", "init"):
+                                        "show", "rm", "connect", "edit", "init",
+                                        "names", "export", "import-json", "import"):
         info = _try_load_file(file_path)
         if info.get("hostname"):
             if info.get("key_file"):

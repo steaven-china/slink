@@ -74,6 +74,8 @@ def connect(host_info: dict):
     password = host_info.get("password")
     key = host_info.get("key")
     key_file = host_info.get("key_file")
+    if key_file and not os.path.isfile(key_file):
+        raise ValueError(f"Key file not found: {key_file}")
     extra_args = host_info.get("extra_args", [])
     if isinstance(extra_args, str):
         extra_args = extra_args.split()

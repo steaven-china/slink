@@ -23,7 +23,9 @@ dist/
 
 # Test artifacts
 .test_home/
+.test_slink/
 *.tmp
+
 
 # OS
 .DS_Store

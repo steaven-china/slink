@@ -61,6 +61,10 @@ def parse_config(text: str) -> dict:
                 v = v.split()
             config[k] = v
 
+    if in_multiline:
+        raise ValueError(
+            f"Multiline block for key '{key}' was not closed with '{MULTILINE_END}'"
+        )
     return config
 
 

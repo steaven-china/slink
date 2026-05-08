@@ -1,174 +1,209 @@
 # slink - Secure SSH Connection Manager
 
-一个轻量级的 SSH 连接管理工具，将连接信息加密存储在本地，支持通过命令行快速连接远程主机。
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-## 特性
+A lightweight SSH connection manager that encrypts your connection info locally and lets you connect with a single command — no need to remember IPs or usernames.
 
-- **加密存储**：使用 AES-128-CBC + HMAC（Fernet）加密，密钥通过 PBKDF2-HMAC-SHA256 从主密码派生
-- **密码保护**：支持主密码保护所有连接信息
-- **密钥管理**：支持私钥文件路径或直接粘贴私钥内容
-- **简单连接**：一条命令即可连接，无需记住 IP 和用户名
+## Features
 
-## 安装
+- **Encrypted Storage**: AES-128-CBC + HMAC (Fernet) encryption, key derived from your master password via PBKDF2-HMAC-SHA256 (480,000 iterations)
+- **Master Password Protection**: All connection info is protected by a single master password
+- **Key Management**: Support private key file paths or inline key pasting
+- **Aliases**: Assign multiple aliases to a single host for quick access
+- **Shell Completion**: Tab-completion for host names (powered by a plaintext `.show_direct` index)
+- **JSON Support**: Export/import hosts as JSON, and connect via `.json` config files
+- **Single-File Config**: One file = one host, supports both plaintext and encrypted formats
+- **SSH Config Import**: Bulk import from `~/.ssh/config`
+- **Password Rotation**: Change your master password anytime without losing data
+- **Cross-Platform**: Works on Windows, Linux, and macOS
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
-# 或直接安装
+# or
 python setup.py install
 ```
 
-Windows 用户也可以直接使用 `slink.bat` 或 `python slink.py`。
+Windows users can also use the standalone binaries (`slink.exe` / `slink-ui.exe`) built with Nuitka.
 
-## 使用
+## Quick Start
 
-### 1. 初始化
-
-首次使用需要设置主密码：
+### 1. Initialize
 
 ```bash
 slink init
 ```
 
-### 2. 添加主机
-
-交互式添加：
+### 2. Add a Host
 
 ```bash
 slink add myserver -h 192.168.1.100 -u root
-```
 
-使用私钥文件：
-
-```bash
+# with a private key file
 slink add myserver -h 192.168.1.100 -u root -i ~/.ssh/id_rsa
+
+# with inline key text
+slink add myserver -h 192.168.1.100 -u root --key-text "-----BEGIN OPENSSH PRIVATE KEY-----\n..."
+
+# with aliases
+slink add web1 -h 10.0.0.5 -u root -a www -a prod
 ```
 
-直接粘贴私钥内容（适合没有本地密钥文件的场景）：
+### 3. List / Show / Connect
 
 ```bash
-slink add myserver -h 192.168.1.100 -u root --key-text "-----BEGIN OPENSSH PRIVATE KEY-----
-..."
+slink list              # table view
+slink list --json       # JSON output
+slink names             # list host names (no password needed)
+slink show myserver     # host details
+slink show myserver --json
+slink connect myserver  # connect via SSH
 ```
 
-### 3. 列出所有主机
-
-```bash
-slink list
-```
-
-### 4. 查看主机详情
-
-```bash
-slink show myserver
-```
-
-### 5. 连接主机
-
-```bash
-slink connect myserver
-```
-
-这会调用系统自带的 `ssh` 命令，所以你完全保留正常的 Shell 体验（补全、历史记录、SSH Agent 转发等）。
-
-### 6. 编辑主机
+### 4. Edit / Remove
 
 ```bash
 slink edit myserver -h new.ip.address -u newuser
+slink rm myserver --yes
 ```
 
-### 7. 删除主机
+### 5. Connect by Alias
 
 ```bash
-slink rm myserver
+slink connect www       # resolves to 'web1' if 'www' is an alias
+slink show prod
+slink rm www --yes      # removes the main host record
 ```
 
-### 8. 从 SSH Config 导入
-
-如果你已经有很多主机配在 `~/.ssh/config` 里：
+### 6. Import from SSH Config
 
 ```bash
-# 导入全部
-slink import
-
-# 导入单个主机
-slink import -h myserver
-
-# 从指定文件导入
-slink import -c /path/to/ssh_config
+slink import            # import all hosts from ~/.ssh/config
+slink import -h myserver # import a specific host
 ```
 
-### 9. 从明文/加密文件直接连接（单文件单主机）
+### 7. Single-File Quick Connect
 
-纯文本格式，易看易编辑。一个文件 = 一个主机：
-
-```bash
-# 明文直接连
-slink web1.txt
-
-# 加密文件连（需要主密码）
-slink web1.txt.enc
-```
-
-配置文件示例 `web1.txt`：
-
+**Plaintext** (`host.txt`):
 ```text
-# slink host config
 hostname: 192.168.1.100
 port: 22
 username: root
 key_file: ~/.ssh/id_rsa
 ```
 
-内联私钥（多行值）：
-
-```text
-hostname: 10.0.0.5
-port: 2222
-username: admin
-key: |
-  -----BEGIN OPENSSH PRIVATE KEY-----
-  ...
-  -----END OPENSSH PRIVATE KEY-----
-|end
+**JSON** (`host.json`):
+```json
+{
+  "hostname": "192.168.1.100",
+  "port": 22,
+  "username": "root",
+  "key_file": "~/.ssh/id_rsa"
+}
 ```
 
-**加密分享**：
+**Encrypted** (`host.txt.enc`):
+```bash
+slink encrypt host.txt        # creates host.txt.enc
+slink decrypt host.txt.enc    # restores host.txt
+```
+
+Connect directly:
+```bash
+slink host.txt
+slink host.json
+slink host.txt.enc
+```
+
+### 8. Export / Import JSON
 
 ```bash
-slink encrypt web1.txt              # 生成 web1.txt.enc
-slink decrypt web1.txt.enc          # 解密回 web1.txt
-slink encrypt web1.txt -o share.enc # 指定输出名
+slink export -o backup.json            # sanitized (no passwords/keys)
+slink export -o backup.json --with-secrets
+slink import-json backup.json
 ```
 
-加密后的 `.enc` 文件可以安全地复制到其他机器，只要对方知道主密码就能连接。
+### 9. Change Master Password
 
-## 环境变量
+```bash
+slink passwd
+```
 
-为了避免每次输入主密码，可以设置环境变量：
+## Environment Variables
+
+Avoid typing your master password repeatedly:
 
 ```bash
 export SLINK_PASSWORD="your_master_password"
 slink list
+slink connect myserver
 ```
 
-> 注意：将密码写入环境变量在共享环境中存在风险，请谨慎使用。
+> **Warning**: Storing passwords in environment variables is risky on shared machines.
 
-## 文件存储位置
+## Data Files
 
-- 加密数据：`~/.slink/hosts.enc`
-- 盐值：`~/.slink/salt`
+All runtime data is stored in `~/.slink/`:
 
-这两个文件权限会被自动设置为仅当前用户可读写（Unix 系统）。
+| File | Description |
+|------|-------------|
+| `hosts.enc` | Encrypted JSON database |
+| `salt` | Random 16-byte salt for PBKDF2 |
+| `.show_direct` | Plaintext host name + alias index (for shell completion) |
+| `.lock` | Advisory lock file for concurrency |
 
-## 依赖
+## Shell Completion
+
+### Bash
+
+```bash
+eval "$(_SLINK_COMPLETE=bash_source slink)"
+```
+
+### Zsh
+
+```zsh
+eval "$(_SLINK_COMPLETE=zsh_source slink)"
+```
+
+### Fish
+
+```fish
+eval (env _SLINK_COMPLETE=fish_source slink)
+```
+
+Host name and alias completion works out of the box (reads `.show_direct`, no password required).
+
+## Dependencies
 
 - Python >= 3.8
-- click
-- cryptography
+- click >= 8.0.0
+- cryptography >= 41.0.0
 
-## 安全说明
+## Security Notes
 
-- 主密码不会存储在磁盘上，只用于派生加密密钥
-- 盐值（salt）随机生成，防止彩虹表攻击
-- PBKDF2 迭代次数为 480,000 次
-- 临时私钥文件在使用后会自动删除
+- The master password is **never stored on disk**; it is only used to derive the encryption key
+- A random salt prevents rainbow table attacks
+- PBKDF2 uses 480,000 iterations
+- Temporary private key files are deleted immediately after SSH disconnect
+- Atomic writes prevent data corruption during power loss
+
+## Building Standalone Binaries
+
+```bash
+# CLI
+python -m nuitka --standalone --include-package=click --include-package=cryptography --output-filename=slink slink.py
+
+# GUI
+python -m nuitka --standalone --enable-plugin=tk-inter --include-package=click --include-package=cryptography --output-filename=slink-ui slink-ui.py
+```
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.  
+See [LICENSE](LICENSE) for details.
+
+## Disclaimer
+
+This tool is provided as-is. The authors are not responsible for any data loss or security incidents arising from its use. Always keep backups of your SSH configurations.

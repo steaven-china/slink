@@ -11,6 +11,7 @@ setup(
     entry_points={
         "console_scripts": [
             "slink=slink.cli:main",
+            "slink-ui=slink.gui:main",
         ],
     },
     python_requires=">=3.8",
