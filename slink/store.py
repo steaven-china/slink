@@ -2,6 +2,7 @@
 Simple store layer on top of the encrypted file.
 """
 import os
+import sys
 
 from .crypto import DEFAULT_CONFIG_DIR, load_hosts, save_hosts
 from .lock import FileLock
