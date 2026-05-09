@@ -14,6 +14,9 @@ A lightweight SSH connection manager that encrypts your connection info locally 
 - **JSON Support**: Export/import hosts as JSON, and connect via `.json` config files
 - **Single-File Config**: One file = one host, supports both plaintext and encrypted formats
 - **SSH Config Import**: Bulk import from `~/.ssh/config`
+- **Multi-Hop Chains**: `.chain` / `.chain.enc` files with per-hop keys and interactive builder (`sli chain-create`)
+- **Port Forwarding / SOCKS5**: `sli tunnel` for local/remote forwards and dynamic proxies
+- **GUI Chain Support**: Open and export chain files from the tkinter interface
 - **Password Rotation**: Change your master password anytime without losing data
 - **Cross-Platform**: Works on Windows, Linux, and macOS
 
@@ -124,7 +127,32 @@ sli export -o backup.json --with-secrets
 sli import-json backup.json
 ```
 
-### 9. Change Master Password
+### 9. Tunnels
+
+```bash
+sli tunnel bastion -L 8080:localhost:80
+sli tunnel bastion -D 1080
+```
+
+### 10. Multi-Hop Chains
+
+Create a chain file interactively:
+
+```bash
+sli chain-create prod.chain
+# or encrypted
+sli chain-create prod.chain.enc
+```
+
+Connect directly:
+
+```bash
+sli prod.chain
+sli prod.chain.enc
+sli connect prod.chain
+```
+
+### 11. Change Master Password
 
 ```bash
 sli passwd
