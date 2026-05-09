@@ -1,6 +1,6 @@
 import unittest
 
-from slink.cli import _unpack_chain
+from slink.api import unpack_chain
 
 
 class TestUnpackChain(unittest.TestCase):
@@ -9,14 +9,14 @@ class TestUnpackChain(unittest.TestCase):
             "jumps": [{"hostname": "bastion", "username": "ops"}],
             "endpoint": {"hostname": "target", "username": "root"},
         }
-        result = _unpack_chain(data)
+        result = unpack_chain(data)
         self.assertIn("_chain", result)
         self.assertEqual(len(result["_chain"]["jumps"]), 1)
         self.assertEqual(result["_chain"]["endpoint"]["hostname"], "target")
 
     def test_legacy_target(self):
         data = {"jumps": [], "target": {"hostname": "old", "username": "u"}}
-        result = _unpack_chain(data)
+        result = unpack_chain(data)
         self.assertEqual(result["_chain"]["endpoint"]["hostname"], "old")
 
     def test_secrets_merged(self):
@@ -30,7 +30,7 @@ class TestUnpackChain(unittest.TestCase):
                 "endpoint": {"password": "pw2", "key": "KEYDATA"},
             },
         }
-        result = _unpack_chain(data)
+        result = unpack_chain(data)
         jumps = result["_chain"]["jumps"]
         endpoint = result["_chain"]["endpoint"]
         self.assertEqual(jumps[0]["password"], "pw1")
@@ -49,7 +49,7 @@ class TestUnpackChain(unittest.TestCase):
             },
             "secrets": {"jumps": [], "endpoint": {}},
         }
-        result = _unpack_chain(data)
+        result = unpack_chain(data)
         self.assertEqual(result["_chain"]["jumps"][0]["hostname"], "hop1")
         self.assertEqual(result["_chain"]["jumps"][0]["port"], 2222)
         self.assertEqual(result["_chain"]["endpoint"]["username"], "admin")

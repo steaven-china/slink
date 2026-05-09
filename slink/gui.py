@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, simpledialog
 from .crypto import DecryptError
 import json
 
+from . import api
 from .ssh_wrapper import connect as ssh_connect, connect_chain
 from .store import add_host, get_host, list_hosts, remove_host, upsert_host
 
@@ -429,8 +430,7 @@ class SlinkGUI(tk.Tk):
         if not path:
             return
         try:
-            from .cli import _try_load_file
-            loaded = _try_load_file(path)
+            loaded = api.load_file(path)
             if "_chain" in loaded:
                 self.status_var.set(f"Connecting chain {os.path.basename(path)}...")
                 self.update_idletasks()
@@ -454,20 +454,6 @@ class SlinkGUI(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
 
-    @staticmethod
-    def _parse_jump_spec(spec: str) -> dict:
-        username = None
-        port = 22
-        if "@" in spec:
-            username, spec = spec.split("@", 1)
-        if ":" in spec:
-            spec, port_str = spec.rsplit(":", 1)
-            try:
-                port = int(port_str)
-            except ValueError:
-                pass
-        return {"hostname": spec, "username": username, "port": port}
-
     def _export_chain(self):
         if not self.selected_name:
             messagebox.showwarning("Select", "Please select a host to export.")
@@ -488,7 +474,7 @@ class SlinkGUI(tk.Tk):
                     "port": jump_info.get("port", 22),
                 })
             else:
-                jumps.append(self._parse_jump_spec(spec))
+                jumps.append(api.parse_jump_spec(spec))
         chain_data = {"jumps": jumps, "endpoint": endpoint}
         path = filedialog.asksaveasfilename(
             title="Export as Chain",
