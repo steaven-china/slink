@@ -1,0 +1,10 @@
+{
+    "jumps": [
+        {"hostname": "bastion.example.com", "username": "ops", "port": 2222},
+        {"hostname": "10.0.0.1", "username": "root"}
+    ],
+    "endpoint": {
+        "hostname": "10.0.0.5",
+        "username": "dbadmin"
+    }
+}

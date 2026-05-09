@@ -30,40 +30,41 @@ def parse_ssh_config(path: str = None) -> dict:
                 real_names = [n for n in names if "*" not in n and "?" not in n]
                 if real_names:
                     current_host = real_names[0]
-                    hosts[current_host] = {
+                    current_aliases = real_names
+                    base = {
                         "hostname": current_host,
                         "port": 22,
                         "username": os.environ.get("USER", os.environ.get("USERNAME", "")),
                     }
+                    for name in real_names:
+                        hosts[name] = dict(base)
                 else:
                     current_host = None
+                    current_aliases = []
                 continue
 
             if current_host is None:
                 continue
 
-            # Config entries
+            # Config entries (apply to all aliases in this Host block)
             key_val_match = re.match(r"^(\w+)\s+(.+)$", stripped)
             if not key_val_match:
                 continue
 
             key, val = key_val_match.group(1).lower(), key_val_match.group(2).strip()
 
-            if key == "hostname":
-                hosts[current_host]["hostname"] = val
-            elif key == "user":
-                hosts[current_host]["username"] = val
-            elif key == "port":
-                try:
-                    hosts[current_host]["port"] = int(val)
-                except ValueError:
-                    pass
-            elif key == "identityfile":
-                hosts[current_host]["key_file"] = os.path.expanduser(val)
-            elif key == "addkeystoagent":
-                pass
-            elif key == "serveraliveinterval":
-                pass
+            for name in current_aliases:
+                if key == "hostname":
+                    hosts[name]["hostname"] = val
+                elif key == "user":
+                    hosts[name]["username"] = val
+                elif key == "port":
+                    try:
+                        hosts[name]["port"] = int(val)
+                    except ValueError:
+                        pass
+                elif key == "identityfile":
+                    hosts[name]["key_file"] = os.path.expanduser(val)
             # Other keys can be added here as needed
 
     return hosts

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from getpass import getpass
 
 import click
@@ -17,9 +18,45 @@ from .ssh_wrapper import connect as ssh_connect
 from .store import add_host, get_host, list_hosts, remove_host, upsert_host
 
 
+def _unpack_chain(data: dict) -> dict:
+    """Unpack a chain payload (topology + secrets) into a host_info dict."""
+    topology = data.get("topology", data)
+    secrets = data.get("secrets", {"jumps": [], "endpoint": {}})
+
+    # Support both 'endpoint' (new) and 'target' (legacy/compat)
+    endpoint = dict(topology.get("endpoint", topology.get("target", {})))
+    endpoint_secret = secrets.get("endpoint", secrets.get("target", {}))
+    if endpoint_secret.get("password"):
+        endpoint["password"] = endpoint_secret["password"]
+    if endpoint_secret.get("key_file"):
+        endpoint["key_file"] = os.path.expanduser(endpoint_secret["key_file"])
+    if endpoint_secret.get("key"):
+        endpoint["key"] = endpoint_secret["key"]
+
+    jump_specs = []
+    for i, hop in enumerate(topology.get("jumps", [])):
+        hop = dict(hop)
+        secret = secrets.get("jumps", [])[i] if i < len(secrets.get("jumps", [])) else {}
+        if secret.get("password"):
+            hop["password"] = secret["password"]
+        # v1: jump hosts rely on SSH agent for keys
+        spec = hop.get("hostname", "")
+        if hop.get("username"):
+            spec = f"{hop['username']}@{spec}"
+        if hop.get("port") and hop["port"] != 22:
+            spec = f"{spec}:{hop['port']}"
+        jump_specs.append(spec)
+
+    endpoint["jump_host"] = jump_specs
+    return endpoint
+
+
 def _try_load_file(file_path: str) -> dict:
-    """Try to load a host file (plain text, JSON, or encrypted .enc)."""
-    if file_path.lower().endswith(".enc"):
+    """Try to load a host file, chain file, or encrypted .enc."""
+    lower = file_path.lower()
+    is_chain = lower.endswith(".chain") or lower.endswith(".chain.enc")
+
+    if lower.endswith(".enc"):
         password = os.environ.get("SLINK_PASSWORD")
         if password is None:
             password = getpass("Master password: ")
@@ -28,11 +65,16 @@ def _try_load_file(file_path: str) -> dict:
         except DecryptError:
             click.echo("Invalid master password or corrupted file.", err=True)
             sys.exit(1)
+        if is_chain:
+            return _unpack_chain(json.loads(plain_text))
         return parse_config(plain_text)
 
-    if file_path.lower().endswith(".json"):
+    if lower.endswith(".json") or lower.endswith(".chain"):
         with open(file_path, "r", encoding="utf-8-sig") as f:
-            return json.load(f)
+            data = json.load(f)
+        if is_chain:
+            return _unpack_chain({"topology": data, "secrets": {"jumps": [], "target": {}}})
+        return data
 
     with open(file_path, "r", encoding="utf-8") as f:
         text = f.read()
@@ -42,7 +84,10 @@ def _try_load_file(file_path: str) -> dict:
 
     # Try JSON as fallback for files without recognized extension
     try:
-        return json.loads(text)
+        data = json.loads(text)
+        if isinstance(data, dict) and ("jumps" in data or "topology" in data):
+            return _unpack_chain({"topology": data, "secrets": {"jumps": [], "target": {}}})
+        return data
     except json.JSONDecodeError:
         pass
 
@@ -51,7 +96,13 @@ def _try_load_file(file_path: str) -> dict:
         password = getpass("Master password (trying encrypted): ")
     try:
         plain_text = decrypt_file_to_text(file_path, password)
-        return parse_config(plain_text)
+        try:
+            data = json.loads(plain_text)
+            if isinstance(data, dict) and ("topology" in data or "jumps" in data):
+                return _unpack_chain(data)
+            return data
+        except json.JSONDecodeError:
+            return parse_config(plain_text)
     except DecryptError:
         click.echo("Could not parse file as plain text, JSON, or decrypt it.", err=True)
         sys.exit(1)
@@ -405,8 +456,37 @@ def edit_cmd(name, hostname, port, username, ask_password, key_file, key_text, a
 @click.option("--output", "-o", default=None, help="Output encrypted file path")
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing file without prompting")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def _collect_chain_secrets(chain_data: dict) -> dict:
+    """Interactively collect passwords/keys for each node in a chain."""
+    secrets = {"jumps": [], "endpoint": {}}
+
+    for i, hop in enumerate(chain_data.get("jumps", [])):
+        click.echo(f"\n--- Jump {i + 1}: {hop.get('hostname')} ---")
+        secret = {}
+        if click.confirm("Add password?", default=False):
+            secret["password"] = getpass("Password: ")
+        if click.confirm("Add key file?", default=False):
+            secret["key_file"] = click.prompt("Key file path")
+        if click.confirm("Paste inline key?", default=False):
+            secret["key"] = click.prompt("Key content", hide_input=False)
+        secrets["jumps"].append(secret)
+
+    endpoint = chain_data.get("endpoint", chain_data.get("target", {}))
+    click.echo(f"\n--- Endpoint: {endpoint.get('hostname')} ---")
+    secret = {}
+    if click.confirm("Add password?", default=False):
+        secret["password"] = getpass("Password: ")
+    if click.confirm("Add key file?", default=False):
+        secret["key_file"] = click.prompt("Key file path")
+    if click.confirm("Paste inline key?", default=False):
+        secret["key"] = click.prompt("Key content", hide_input=False)
+    secrets["endpoint"] = secret
+
+    return secrets
+
+
 def encrypt_cmd(file, output, force, master_password):
-    """Encrypt a plain-text host file."""
+    """Encrypt a plain-text host file or chain file."""
     if master_password is None:
         master_password = getpass("Master password: ")
     if output is None:
@@ -414,8 +494,182 @@ def encrypt_cmd(file, output, force, master_password):
     if os.path.exists(output) and not force:
         if not click.confirm(f"File '{output}' already exists. Overwrite?"):
             return
-    encrypt_file(file, output, master_password)
+
+    if file.lower().endswith(".chain"):
+        with open(file, "r", encoding="utf-8-sig") as f:
+            chain_data = json.load(f)
+        secrets = _collect_chain_secrets(chain_data)
+        payload = {"topology": chain_data, "secrets": secrets}
+        json_text = json.dumps(payload, ensure_ascii=False, indent=2)
+
+        fd, tmp_path = tempfile.mkstemp(suffix=".chain.json")
+        try:
+            os.write(fd, json_text.encode("utf-8"))
+            os.close(fd)
+            encrypt_file(tmp_path, output, master_password)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    else:
+        encrypt_file(file, output, master_password)
+
     click.echo(f"Encrypted: {file} -> {output}")
+
+
+def _pick_node(label: str, hosts: dict):
+    """Let user pick a node from stored hosts or manual input."""
+    click.echo(f"\nPick {label}:")
+    if hosts:
+        sorted_hosts = sorted(hosts.items())
+        for i, (name, info) in enumerate(sorted_hosts, 1):
+            click.echo(f"  [{i}] {name}  ({info.get('hostname')}, {info.get('username')})")
+    click.echo("  [0] Manual input")
+    choice = click.prompt("Choice", type=int, default=0)
+    if choice == 0:
+        return _manual_node()
+    sorted_hosts = sorted(hosts.items())
+    if 1 <= choice <= len(sorted_hosts):
+        name, info = sorted_hosts[choice - 1]
+        return {
+            "hostname": info.get("hostname", name),
+            "username": info.get("username"),
+            "port": info.get("port", 22),
+        }
+    click.echo("Invalid choice.")
+    return None
+
+
+def _manual_node():
+    """Prompt for manual node input."""
+    hostname = click.prompt("Hostname")
+    username = click.prompt("Username", default="")
+    port = click.prompt("Port", default=22, type=int)
+    node = {"hostname": hostname, "port": port}
+    if username:
+        node["username"] = username
+    return node
+
+
+def _show_chain(jumps: list, endpoint: dict):
+    """Print visual chain preview."""
+    click.echo("\n=== Current Chain ===")
+    parts = ["[YOU]"]
+    for hop in jumps:
+        parts.append(f"[{hop.get('hostname')}]")
+    parts.append(f"[{endpoint.get('hostname')}]  <-- endpoint")
+    click.echo(" ──→ ".join(parts))
+
+
+def _edit_node(jumps: list, endpoint: dict, hosts: dict):
+    """Edit a node in the chain."""
+    total = len(jumps) + 1
+    click.echo(f"\nEdit which node? [1-{total}] ({total} = endpoint)")
+    idx = click.prompt("Index", type=int, default=total)
+    if idx == total:
+        new_node = _pick_node("new endpoint", hosts)
+        if new_node:
+            endpoint.clear()
+            endpoint.update(new_node)
+    elif 1 <= idx <= len(jumps):
+        new_node = _pick_node("new jump", hosts)
+        if new_node:
+            jumps[idx - 1] = new_node
+    else:
+        click.echo("Invalid index.")
+
+
+def _remove_node(jumps: list):
+    """Remove a jump from the chain."""
+    if not jumps:
+        click.echo("No jumps to remove.")
+        return
+    click.echo(f"\nRemove which jump? [1-{len(jumps)}]")
+    idx = click.prompt("Index", type=int, default=len(jumps))
+    if 1 <= idx <= len(jumps):
+        removed = jumps.pop(idx - 1)
+        click.echo(f"Removed: {removed.get('hostname')}")
+    else:
+        click.echo("Invalid index.")
+
+
+def _preview_chain(jumps: list, endpoint: dict):
+    """Preview the chain JSON."""
+    chain_data = {"jumps": jumps, "endpoint": endpoint}
+    click.echo("\n" + json.dumps(chain_data, ensure_ascii=False, indent=2))
+
+
+@cli.command(name="chain-create")
+@click.argument("output", type=click.Path())
+@click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def chain_create_cmd(output, master_password):
+    """Interactively create a .chain or .chain.enc file."""
+    # Try to load stored hosts for picking
+    hosts = {}
+    try:
+        if master_password:
+            hosts = list_hosts(password=master_password)
+    except Exception:
+        pass
+
+    jumps = []
+    endpoint = {}
+
+    click.echo("\n=== Chain Builder ===")
+    click.echo("Step 1: Choose endpoint")
+    endpoint = _pick_node("endpoint", hosts)
+    if not endpoint:
+        click.echo("No endpoint selected. Aborting.", err=True)
+        sys.exit(1)
+
+    while True:
+        _show_chain(jumps, endpoint)
+        click.echo("\n[1] Add jump  [2] Edit  [3] Remove  [4] Preview  [5] Save")
+        choice = click.prompt("Choice", type=int, default=1)
+
+        if choice == 1:
+            node = _pick_node("jump", hosts)
+            if node:
+                pos = click.prompt(f"Insert position [1-{len(jumps) + 1}]",
+                                   type=int, default=len(jumps) + 1)
+                pos = max(0, min(pos - 1, len(jumps)))
+                jumps.insert(pos, node)
+        elif choice == 2:
+            _edit_node(jumps, endpoint, hosts)
+        elif choice == 3:
+            _remove_node(jumps)
+        elif choice == 4:
+            _preview_chain(jumps, endpoint)
+        elif choice == 5:
+            break
+        else:
+            click.echo("Invalid choice.")
+
+    chain_data = {"jumps": jumps, "endpoint": endpoint}
+
+    if click.confirm("\nEncrypt into .chain.enc?", default=False):
+        if master_password is None:
+            master_password = getpass("Master password: ")
+        secrets = _collect_chain_secrets(chain_data)
+        payload = {"topology": chain_data, "secrets": secrets}
+        json_text = json.dumps(payload, ensure_ascii=False, indent=2)
+        fd, tmp_path = tempfile.mkstemp(suffix=".chain.json")
+        try:
+            os.write(fd, json_text.encode("utf-8"))
+            os.close(fd)
+            encrypt_file(tmp_path, output, master_password)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        click.echo(f"Encrypted chain saved: {output}")
+    else:
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(chain_data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        click.echo(f"Chain saved: {output}")
 
 
 @cli.command(name="decrypt")
@@ -686,6 +940,9 @@ def ml_cmd(targets, workspace, list_groups, list_workspaces, user, port, dry_run
 
 def _resolve_argv_file(argv):
     """Detect if the first non-option arg is a file path for quick connect."""
+    # Don't intercept if user asked for help
+    if any(a in ("--help", "-h") for a in argv):
+        return None
     commands = set(cli.commands.keys())
     for arg in argv[1:]:
         if arg.startswith("-"):
@@ -706,12 +963,16 @@ def main():
                                         "names", "export", "import-json", "import",
                                         "jump-list", "agent-pass", "ml",
                                         "gui"):
-        info = _try_load_file(file_path)
-        if info.get("hostname"):
-            if info.get("key_file"):
-                info["key_file"] = os.path.expanduser(info["key_file"])
-            ssh_connect(info)
-            return
+        try:
+            info = _try_load_file(file_path)
+            if info.get("hostname"):
+                if info.get("key_file"):
+                    info["key_file"] = os.path.expanduser(info["key_file"])
+                ssh_connect(info)
+                return
+        except Exception as exc:
+            click.echo(f"Error: {exc}", err=True)
+            sys.exit(1)
     cli()
 
 

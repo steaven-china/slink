@@ -59,6 +59,10 @@ def save_workspace(data: dict, name: str):
             os.chmod(path, 0o600)
     except Exception:
         try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
             os.remove(tmp_path)
         except OSError:
             pass

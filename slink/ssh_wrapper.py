@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 
 
 # Mapping for common key types in case users paste raw keys
@@ -54,6 +55,7 @@ def _write_temp_key(key_data: str) -> str:
 
 
 ACTIVE_PROCS = []
+_ACTIVE_LOCK = threading.Lock()
 
 
 def connect(host_info: dict):
@@ -131,11 +133,14 @@ def connect(host_info: dict):
         if use_sshpass:
             env["SSHPASS"] = password
         proc = subprocess.Popen(ssh_cmd, env=env)
-        ACTIVE_PROCS.append(proc)
+        with _ACTIVE_LOCK:
+            ACTIVE_PROCS.append(proc)
         proc.wait()
     finally:
-        if proc and proc in ACTIVE_PROCS:
-            ACTIVE_PROCS.remove(proc)
+        if proc:
+            with _ACTIVE_LOCK:
+                if proc in ACTIVE_PROCS:
+                    ACTIVE_PROCS.remove(proc)
         if tmp_path:
             try:
                 if sys.platform == "win32":
@@ -147,7 +152,10 @@ def connect(host_info: dict):
 
 def terminate_all():
     """Terminate all active SSH processes."""
-    for proc in list(ACTIVE_PROCS):
+    with _ACTIVE_LOCK:
+        procs = list(ACTIVE_PROCS)
+        ACTIVE_PROCS.clear()
+    for proc in procs:
         try:
             proc.terminate()
             proc.wait(timeout=2)
@@ -156,4 +164,3 @@ def terminate_all():
                 proc.kill()
             except Exception:
                 pass
-    ACTIVE_PROCS.clear()

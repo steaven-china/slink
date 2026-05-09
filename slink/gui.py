@@ -205,31 +205,45 @@ class SlinkGUI(tk.Tk):
 
     def _build_ui(self):
         # Left panel
-        left = tk.Frame(self, width=220)
+        left = tk.Frame(self, width=240)
         left.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
         left.pack_propagate(False)
 
         tk.Label(left, text="Hosts", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 5))
 
+        # Search box
+        self.search_var = tk.StringVar()
+        self.search_var.trace("w", self._on_search)
+        search_entry = tk.Entry(left, textvariable=self.search_var)
+        search_entry.pack(fill=tk.X, pady=(0, 5))
+        search_entry.insert(0, "Search...")
+        search_entry.bind("<FocusIn>", lambda e: search_entry.select_range(0, tk.END) if search_entry.get() == "Search..." else None)
+        search_entry.bind("<FocusOut>", lambda e: search_entry.insert(0, "Search...") if not search_entry.get() else None)
+
         list_frame = tk.Frame(left)
         list_frame.pack(fill=tk.BOTH, expand=True)
         scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL)
-        self.listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, exportselection=False)
+        self.listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, exportselection=False, activestyle="dotbox")
         scrollbar.config(command=self.listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.listbox.bind("<<ListboxSelect>>", self._on_select)
         self.listbox.bind("<Double-Button-1>", lambda _e: self._connect())
+        self.listbox.bind("<Return>", lambda _e: self._connect())
+        self.listbox.bind("<Delete>", lambda _e: self._delete_host())
+        self.listbox.bind("<F2>", lambda _e: self._edit_host())
         self.bind("j", lambda _e: self._jump_list())
+        self.bind("<Control-f>", lambda _e: search_entry.focus_set())
+        self.bind("<Control-n>", lambda _e: self._add_host())
 
         btn_frame = tk.Frame(left)
         btn_frame.pack(fill=tk.X, pady=(10, 0))
         for label, cmd in [
-            ("Add", self._add_host),
-            ("Edit", self._edit_host),
-            ("Delete", self._delete_host),
-            ("Connect", self._connect),
-            ("Jump List", self._jump_list),
+            ("Add (Ctrl+N)", self._add_host),
+            ("Edit (F2)", self._edit_host),
+            ("Delete (Del)", self._delete_host),
+            ("Connect (Enter)", self._connect),
+            ("Jump List (J)", self._jump_list),
         ]:
             tk.Button(btn_frame, text=label, command=cmd).pack(fill=tk.X, pady=2)
 
@@ -241,6 +255,14 @@ class SlinkGUI(tk.Tk):
             right, wrap=tk.WORD, state=tk.DISABLED, padx=10, pady=10, font=("Consolas", 10)
         )
         self.detail_text.pack(fill=tk.BOTH, expand=True)
+
+        # Status bar
+        self.status_var = tk.StringVar(value="Ready")
+        status_bar = tk.Label(self, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Default focus
+        self.after(100, lambda: self.listbox.focus_set())
 
     def _ask_password(self):
         dialog = PasswordDialog(self)
@@ -264,11 +286,35 @@ class SlinkGUI(tk.Tk):
             return
         self._refresh_list()
         self._clear_detail()
+        self.status_var.set(f"Loaded {len(self.hosts)} host(s)")
 
     def _refresh_list(self):
+        if not hasattr(self, "listbox"):
+            return
         self.listbox.delete(0, tk.END)
+        self._list_names = []
+        search = self.search_var.get().lower()
+        if search == "search...":
+            search = ""
+        selected_idx = None
         for name in sorted(self.hosts):
-            self.listbox.insert(tk.END, name)
+            if search in name.lower():
+                idx = self.listbox.size()
+                self.listbox.insert(tk.END, name)
+                self._list_names.append(name)
+                if name == getattr(self, "selected_name", None):
+                    selected_idx = idx
+        if selected_idx is not None:
+            self.listbox.selection_clear(0, tk.END)
+            self.listbox.selection_set(selected_idx)
+            self.listbox.see(selected_idx)
+        else:
+            self.selected_name = None
+
+    def _on_search(self, *args):
+        if not hasattr(self, "listbox"):
+            return
+        self._refresh_list()
 
     def _clear_detail(self):
         self.detail_text.config(state=tk.NORMAL)
@@ -356,7 +402,14 @@ class SlinkGUI(tk.Tk):
         info = self.hosts.get(self.selected_name)
         if not info:
             return
-        threading.Thread(target=ssh_connect, args=(info,), daemon=True).start()
+        self.status_var.set(f"Connecting to {self.selected_name}...")
+        self.update_idletasks()
+        def _do_connect():
+            try:
+                ssh_connect(info)
+            finally:
+                self.after(0, lambda: self.status_var.set("Ready"))
+        threading.Thread(target=_do_connect, daemon=True).start()
 
     def _on_close(self):
         from .ssh_wrapper import terminate_all
