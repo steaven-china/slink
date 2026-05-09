@@ -23,8 +23,9 @@ A lightweight SSH connection manager that encrypts your connection info locally 
 ## Installation
 
 ```bash
+pip install slinks
+# or from source
 pip install -r requirements.txt
-# or
 python setup.py install
 ```
 

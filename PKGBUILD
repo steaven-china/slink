@@ -1,5 +1,5 @@
 # Maintainer: Steaven Jiang
-pkgname=slink
+pkgname=slinks
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Secure SSH Connection Manager with encrypted storage"
