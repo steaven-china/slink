@@ -13,6 +13,7 @@
   - [GUI Mode](user-guide/gui.md)
   - [Multi-Login Engine](user-guide/ml.md)
   - [Groups & Workspaces](user-guide/groups-workspaces.md)
+  - [Chain Connections](user-guide/chain.md)
 
 - **Configuration**
   - [Config Files](configuration/config-files.md)

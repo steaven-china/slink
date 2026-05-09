@@ -32,7 +32,32 @@ sli add db -h 10.0.0.5 --jump-host bastion
 sli connect db       # translates to ssh -J user@bastion user@db
 ```
 
-## 5. List & Show
+## 5. Multi-Hop Chains
+
+Create a `.chain` file for complex topologies:
+
+```bash
+sli chain-create prod.chain
+# Interactive menu: pick endpoint, add jumps, save
+```
+
+Connect directly:
+
+```bash
+sli prod.chain
+sli prod.chain.enc   # prompts for master password
+```
+
+## 6. Tunnels
+
+Forward ports or open a SOCKS5 proxy without starting a remote shell:
+
+```bash
+sli tunnel bastion -L 8080:localhost:80
+sli tunnel bastion -D 1080
+```
+
+## 7. List & Show
 
 ```bash
 sli list

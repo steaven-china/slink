@@ -6,6 +6,7 @@
 |--------|---------------|
 | `cli.py` | Click-based CLI, command routing, quick-connect |
 | `gui.py` | tkinter GUI (`sli-ui`) |
+| `api.py` | Public API surface (chain unpack, file load, jump resolution) |
 | `crypto.py` | Encryption/decryption, key derivation, salt management |
 | `store.py` | Encrypted host CRUD, alias resolution, `.show_direct` sync |
 | `ssh_wrapper.py` | System `ssh` invocation, temp key files, process cleanup |

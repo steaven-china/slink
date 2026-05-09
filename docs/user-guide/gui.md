@@ -22,6 +22,8 @@ A tkinter-based desktop interface for users who prefer a graphical workflow.
   - `Ctrl+N` — Add host
   - `J` — Jump list
 - **Connection** — Double-click a host to open an SSH session in a background thread.
+- **Open Chain** — Open a `.chain` or `.chain.enc` file directly from the GUI.
+- **Export Chain** — Export the currently selected host (and its jump hosts) as a `.chain` file.
 - **Status Bar** — Shows connection state and host count.
 
 ## Dependencies

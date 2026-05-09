@@ -21,6 +21,41 @@ Add a new SSH host.
 ### `sli connect <name>`
 SSH into the host. Aliases, jump hosts, and key files are resolved automatically.
 
+Also accepts a file path for quick-connect:
+
+```bash
+sli connect myhost.chain
+sli connect myhost.chain.enc
+```
+
+### `sli tunnel <name> [OPTIONS]`
+Open SSH tunnels (port forwarding / SOCKS5) without executing a remote command.
+
+| Option | Description |
+|--------|-------------|
+| `-L, --local-forward` | Local port forward, e.g. `8080:localhost:80` |
+| `-R, --remote-forward` | Remote port forward |
+| `-D, --dynamic` | SOCKS5 proxy port, e.g. `1080` |
+
+Examples:
+
+```bash
+sli tunnel bastion -L 8080:localhost:80
+sli tunnel bastion -D 1080
+sli tunnel bastion -L 8080:localhost:80 -L 9090:localhost:90
+```
+
+### `sli chain-create <output>`
+Interactively create a `.chain` or `.chain.enc` file.
+
+Walks you through selecting an endpoint and zero or more jump hosts,
+with an option to encrypt the result into a single password-protected bundle.
+
+```bash
+sli chain-create prod.chain
+sli chain-create prod.chain.enc
+```
+
 ### `sli list [--json]`
 List all stored hosts. `--json` outputs machine-readable format.
 

@@ -19,6 +19,48 @@ On Windows: `%USERPROFILE%\.slink\`
     └── <name>.json
 ```
 
+## Chain Files
+
+Chain files describe multi-hop SSH topologies. They come in two flavors:
+
+### `.chain` — Plain topology (safe to share, no secrets)
+
+```json
+{
+  "jumps": [
+    {"hostname": "bastion.example.com", "username": "ops", "port": 2222},
+    {"hostname": "10.0.0.1", "username": "root"}
+  ],
+  "endpoint": {
+    "hostname": "10.0.0.5",
+    "username": "dbadmin"
+  }
+}
+```
+
+### `.chain.enc` — Encrypted bundle (one password unlocks everything)
+
+Internally stores `topology` + `secrets` and auto-merges on load:
+
+```json
+{
+  "topology": {
+    "jumps": [...],
+    "endpoint": {...}
+  },
+  "secrets": {
+    "jumps": [
+      {"password": "...", "key_file": "..."},
+      ...
+    ],
+    "endpoint": {"password": "...", "key": "..."}
+  }
+}
+```
+
+Use `sli chain-create` to build these interactively, or export a stored host
+with jumps from the GUI.
+
 ## Multi-User Isolation
 
 Set the environment variable to switch config directories:
