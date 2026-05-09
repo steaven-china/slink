@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 240" width="280" height="240">
+  <!-- 上方倒置锁 -->
+  <g fill="#1a8f8a">
+    <rect x="123" y="15" width="34" height="22" rx="4"/>
+    <path d="M 128 37 L 128 46 A 12 12 0 0 0 152 46 L 152 37" fill="none" stroke="#1a8f8a" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <!-- 下方正锁 -->
+  <g fill="#1a8f8a">
+    <path d="M 128 203 L 128 194 A 12 12 0 0 1 152 194 L 152 203" fill="none" stroke="#1a8f8a" stroke-width="5" stroke-linecap="round"/>
+    <rect x="123" y="203" width="34" height="22" rx="4"/>
+  </g>
+
+  <!-- 居中对称 S（等宽双线风格） -->
+  <path d="M 152 68
+           C 152 54, 140 50, 120 50
+           C 96 50, 82 58, 82 74
+           C 82 88, 94 94, 116 98
+           C 142 103, 150 110, 150 122
+           C 150 136, 138 144, 118 144
+           C 96 144, 84 138, 82 126
+           L 96 124
+           C 98 130, 106 134, 118 134
+           C 132 134, 138 130, 138 122
+           C 138 116, 132 113, 112 109
+           C 84 104, 70 96, 70 74
+           C 70 52, 88 40, 120 40
+           C 146 40, 164 48, 164 68
+           Z"
+        fill="#1a8f8a"/>
+
+  <!-- 右侧三条横线 -->
+  <g fill="#1a8f8a">
+    <rect x="185" y="90" width="55" height="8" rx="4"/>
+    <rect x="185" y="115" width="40" height="8" rx="4"/>
+    <rect x="185" y="140" width="65" height="8" rx="4"/>
+  </g>
+</svg>

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 240" width="280" height="240">
+  
+  <!-- 上方小锁 -->
+  <g fill="#1a8f8a">
+    <!-- 锁梁 -->
+    <path d="M 108 25 L 108 16 A 12 12 0 0 1 132 16 L 132 25" fill="none" stroke="#1a8f8a" stroke-width="5" stroke-linecap="round"/>
+    <!-- 锁体 -->
+    <rect x="103" y="25" width="34" height="22" rx="4"/>
+  </g>
+  
+  <!-- 下方小锁 -->
+  <g fill="#1a8f8a">
+    <!-- 锁梁 -->
+    <path d="M 108 215 L 108 206 A 12 12 0 0 1 132 206 L 132 215" fill="none" stroke="#1a8f8a" stroke-width="5" stroke-linecap="round"/>
+    <!-- 锁体 -->
+    <rect x="103" y="215" width="34" height="22" rx="4"/>
+  </g>
+  
+  <!-- 字母 S -->
+  <path d="M 155 68 
+           C 155 52, 140 48, 120 48 
+           C 95 48, 78 58, 78 78 
+           C 78 96, 95 102, 118 106 
+           C 145 111, 152 118, 152 132 
+           C 152 152, 135 158, 118 158 
+           C 95 158, 80 150, 78 135
+           L 95 133
+           C 97 142, 105 146, 118 146
+           C 130 146, 136 140, 136 132
+           C 136 124, 130 121, 112 117
+           C 82 111, 62 102, 62 78
+           C 62 52, 85 36, 120 36
+           C 148 36, 170 44, 170 68
+           Z" 
+        fill="#1a8f8a"/>
+  
+  <!-- 右侧三条横线 -->
+  <g fill="#1a8f8a">
+    <rect x="185" y="90" width="55" height="8" rx="4"/>
+    <rect x="185" y="115" width="40" height="8" rx="4"/>
+    <rect x="185" y="140" width="65" height="8" rx="4"/>
+  </g>
+  
+</svg>

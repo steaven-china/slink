@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usage — slink</title>
+    <link rel="stylesheet" href="../style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-brand">
+                <img src="../logo-final.svg" alt="slink logo">
+                <span>slink</span>
+            </a>
+            <div class="nav-links">
+                <a href="install.html" class="nav-link">Installation</a>
+                <a href="usage.html" class="nav-link active">Usage</a>
+                <a href="commands.html" class="nav-link">Commands</a>
+                <a href="security.html" class="nav-link">Security</a>
+                <a href="config.html" class="nav-link">Config</a>
+                <a href="gui.html" class="nav-link">GUI</a>
+            </div>
+        </div>
+    </nav>
+    <main>
+        <h1>Usage Guide</h1>
+
+        <h2>1. Initialize</h2>
+        <p>Set your master password on first run. This encrypts all stored credentials.</p>
+        <div class="code-block">sli init</div>
+
+        <h2>2. Add a Host</h2>
+        <div class="code-block">sli add web1 -h 192.168.1.100 -p 22 -u root -a www -a prod</div>
+        <p>Use <code>-a</code> to assign multiple aliases. The command will prompt for the SSH password and store it encrypted.</p>
+
+        <h2>3. Connect</h2>
+        <div class="code-block">sli connect web1<br>sli connect www      # alias works too</div>
+
+        <h2>4. Jump Hosts</h2>
+        <p>Chain through bastion hosts automatically:</p>
+        <div class="code-block">sli add db -h 10.0.0.5 --jump-host bastion<br>sli connect db       # translates to ssh -J user@bastion user@db</div>
+
+        <h2>5. Discover Remote Targets (jump-list)</h2>
+        <p>SSH into a jump host and read its <code>.show_direct</code> to discover what downstream hosts are available:</p>
+        <div class="code-block">sli jump-list bastion</div>
+        <p class="text-sm">In the GUI, select a host and click <strong>Jump List</strong> (or press <code>j</code>) to do the same visually.</p>
+
+        <h2>6. JSON Import / Export</h2>
+        <p>Backup or migrate your entire config:</p>
+        <div class="code-block">sli export > backup.json<br>sli import-json backup.json</div>
+
+        <h2>7. Rotate Master Password</h2>
+        <div class="code-block">sli passwd</div>
+
+        <h2>8. Shell Completion</h2>
+        <p>No password needed — reads the plaintext <code>.show_direct</code> index:</p>
+        <div class="code-block"># Bash<br>eval "$(_SLI_COMPLETE=bash_source sli)"<br><br># Zsh<br>eval "$(_SLI_COMPLETE=zsh_source sli)"</div>
+
+        <h2>9. Quick Connect from File</h2>
+        <p>Double-click or pass a <code>.json</code> file directly:</p>
+        <div class="code-block">sli connect ./server.json</div>
+    </main>
+    <footer>
+        <div class="footer-inner">
+            <p>Licensed under <a href="https://www.gnu.org/licenses/gpl-3.0">GPL-3.0</a></p>
+            <a href="https://github.com/steaven-china/slink">github.com/steaven-china/slink</a>
+        </div>
+    </footer>
+    <script>
+    (function(){
+        document.querySelectorAll('.code-block').forEach(function(el){
+            if(el.closest('.code-wrap') || el.querySelector('.copy-btn')) return;
+            var wrap = document.createElement('div');
+            wrap.className = 'code-wrap';
+            el.parentNode.insertBefore(wrap, el);
+            wrap.appendChild(el);
+            var btn = document.createElement('button');
+            btn.className = 'copy-btn';
+            btn.textContent = 'Copy';
+            btn.onclick = function(){
+                var text = el.textContent.replace(/^Copy\n?/, '');
+                navigator.clipboard.writeText(text).then(function(){
+                    btn.textContent = 'Copied!'; btn.classList.add('copied');
+                    setTimeout(function(){btn.textContent='Copy';btn.classList.remove('copied');}, 2000);
+                });
+            };
+            wrap.appendChild(btn);
+        });
+        var topBtn = document.createElement('button');
+        topBtn.id = 'back-to-top';
+        topBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
+        topBtn.onclick = function(){window.scrollTo({top:0,behavior:'smooth'});};
+        document.body.appendChild(topBtn);
+        window.addEventListener('scroll', function(){
+            topBtn.classList.toggle('visible', window.scrollY > 300);
+        });
+        var nav = document.querySelector('nav');
+        if(nav){
+            window.addEventListener('scroll', function(){
+                nav.classList.toggle('scrolled', window.scrollY > 10);
+            });
+        }
+    })();
+    </script>
+</body>
+</html>
