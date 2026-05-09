@@ -358,6 +358,11 @@ class SlinkGUI(tk.Tk):
             return
         threading.Thread(target=ssh_connect, args=(info,), daemon=True).start()
 
+    def _on_close(self):
+        from .ssh_wrapper import terminate_all
+        terminate_all()
+        self.destroy()
+
     def _jump_list(self):
         if self.selected_name:
             name = self.selected_name
