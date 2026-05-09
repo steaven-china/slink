@@ -496,6 +496,13 @@ def import_json_cmd(file, master_password):
     click.echo(f"\nDone: {imported} imported, {skipped} skipped.")
 
 
+@cli.command(name="gui")
+def gui_cmd():
+    """Launch the tkinter GUI (sli-ui)."""
+    from .gui import main as gui_main
+    gui_main()
+
+
 @cli.command(name="agent-pass")
 @click.option("--ttl", "-t", default=300, help="Time-to-live in seconds (default: 300)")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
@@ -697,7 +704,8 @@ def main():
     if file_path and file_path not in ("encrypt", "decrypt", "add", "list",
                                         "show", "rm", "connect", "edit", "init",
                                         "names", "export", "import-json", "import",
-                                        "jump-list", "agent-pass", "ml"):
+                                        "jump-list", "agent-pass", "ml",
+                                        "gui"):
         info = _try_load_file(file_path)
         if info.get("hostname"):
             if info.get("key_file"):
