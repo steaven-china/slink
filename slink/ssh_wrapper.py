@@ -150,6 +150,140 @@ def connect(host_info: dict):
                 pass
 
 
+def _escape_config_val(val: str) -> str:
+    """Quote values that contain spaces for ssh_config."""
+    if " " in val or '"' in val:
+        return '"' + val.replace('"', '\\"') + '"'
+    return val
+
+
+def _build_chain_config(jumps: list[dict], temp_keys: dict) -> str:
+    """Build OpenSSH config text for jump hosts."""
+    lines = []
+    for i, hop in enumerate(jumps):
+        lines.append(f"Host slk_jump_{i}")
+        lines.append(f"    HostName {hop['hostname']}")
+        if hop.get("username"):
+            lines.append(f"    User {hop['username']}")
+        port = int(hop.get("port", 22))
+        if port != 22:
+            lines.append(f"    Port {port}")
+        key_file = temp_keys.get(f"jump_{i}") or hop.get("key_file")
+        if key_file:
+            key_file = key_file.replace("\\", "/")
+            lines.append(f"    IdentityFile {_escape_config_val(key_file)}")
+        lines.append("    StrictHostKeyChecking accept-new")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def connect_chain(jumps: list[dict], endpoint: dict):
+    """
+    Connect through a chain of jumps to an endpoint.
+
+    Generates a temporary SSH config file so each jump can have its own
+    IdentityFile.  Jumps with password-based auth are not supported by
+    OpenSSH ProxyJump; keys or agent are required for intermediate hops.
+    """
+    import atexit
+
+    temp_keys = {}
+    config_path = None
+
+    def _cleanup():
+        for p in list(temp_keys.values()):
+            try:
+                if sys.platform == "win32":
+                    os.chmod(p, stat.S_IWRITE)
+                os.remove(p)
+            except OSError:
+                pass
+        nonlocal config_path
+        if config_path:
+            try:
+                if sys.platform == "win32":
+                    os.chmod(config_path, stat.S_IWRITE)
+                os.remove(config_path)
+            except OSError:
+                pass
+
+    atexit.register(_cleanup)
+
+    try:
+        # Write temp inline keys
+        for i, hop in enumerate(jumps):
+            if hop.get("key"):
+                temp_keys[f"jump_{i}"] = _write_temp_key(hop["key"])
+        if endpoint.get("key"):
+            temp_keys["endpoint"] = _write_temp_key(endpoint["key"])
+
+        config_text = _build_chain_config(jumps, temp_keys)
+        fd, config_path = tempfile.mkstemp(prefix="slink_cfg_", suffix=".conf")
+        try:
+            os.write(fd, config_text.encode("utf-8"))
+            os.close(fd)
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
+
+        # Build ssh command
+        password = endpoint.get("password")
+        use_sshpass = False
+        if password and shutil.which("sshpass"):
+            use_sshpass = True
+        elif password:
+            print("Warning: 'sshpass' not found. Install it to use password-based login.", file=sys.stderr)
+
+        ssh_cmd = []
+        if use_sshpass:
+            ssh_cmd = ["sshpass", "-e", "ssh"]
+        else:
+            ssh_cmd = ["ssh"]
+
+        ssh_cmd.extend(["-F", config_path])
+
+        jump_specs = [f"slk_jump_{i}" for i in range(len(jumps))]
+        ssh_cmd.extend(["-J", ",".join(jump_specs)])
+
+        if temp_keys.get("endpoint"):
+            ssh_cmd.extend(["-i", temp_keys["endpoint"]])
+        elif endpoint.get("key_file"):
+            ssh_cmd.extend(["-i", endpoint["key_file"]])
+
+        ssh_cmd.extend(["-o", "StrictHostKeyChecking=accept-new"])
+
+        extra_args = endpoint.get("extra_args", [])
+        if isinstance(extra_args, str):
+            extra_args = extra_args.split()
+        if extra_args:
+            ssh_cmd.extend(extra_args)
+
+        target = endpoint.get("hostname", "")
+        if endpoint.get("username"):
+            target = f"{endpoint['username']}@{target}"
+
+        print(f"Connecting via {len(jumps)} jump(s) to {target} ...")
+
+        env = os.environ.copy()
+        if use_sshpass:
+            env["SSHPASS"] = password
+
+        proc = subprocess.Popen(ssh_cmd, env=env)
+        with _ACTIVE_LOCK:
+            ACTIVE_PROCS.append(proc)
+        proc.wait()
+    finally:
+        if "proc" in locals() and proc:
+            with _ACTIVE_LOCK:
+                if proc in ACTIVE_PROCS:
+                    ACTIVE_PROCS.remove(proc)
+        _cleanup()
+        atexit.unregister(_cleanup)
+
+
 def terminate_all():
     """Terminate all active SSH processes."""
     with _ACTIVE_LOCK:

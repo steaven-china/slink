@@ -19,7 +19,7 @@ from .store import add_host, get_host, list_hosts, remove_host, upsert_host
 
 
 def _unpack_chain(data: dict) -> dict:
-    """Unpack a chain payload (topology + secrets) into a host_info dict."""
+    """Unpack a chain payload into a _chain dict for connect_chain()."""
     topology = data.get("topology", data)
     secrets = data.get("secrets", {"jumps": [], "endpoint": {}})
 
@@ -33,22 +33,19 @@ def _unpack_chain(data: dict) -> dict:
     if endpoint_secret.get("key"):
         endpoint["key"] = endpoint_secret["key"]
 
-    jump_specs = []
+    jumps = []
     for i, hop in enumerate(topology.get("jumps", [])):
         hop = dict(hop)
         secret = secrets.get("jumps", [])[i] if i < len(secrets.get("jumps", [])) else {}
         if secret.get("password"):
             hop["password"] = secret["password"]
-        # v1: jump hosts rely on SSH agent for keys
-        spec = hop.get("hostname", "")
-        if hop.get("username"):
-            spec = f"{hop['username']}@{spec}"
-        if hop.get("port") and hop["port"] != 22:
-            spec = f"{spec}:{hop['port']}"
-        jump_specs.append(spec)
+        if secret.get("key_file"):
+            hop["key_file"] = os.path.expanduser(secret["key_file"])
+        if secret.get("key"):
+            hop["key"] = secret["key"]
+        jumps.append(hop)
 
-    endpoint["jump_host"] = jump_specs
-    return endpoint
+    return {"_chain": {"jumps": jumps, "endpoint": endpoint}}
 
 
 def _try_load_file(file_path: str) -> dict:
@@ -395,6 +392,10 @@ def connect_cmd(name, extra_args, master_password):
     if not info:
         click.echo(f"Host '{name}' not found.", err=True)
         sys.exit(1)
+    if info.get("_chain"):
+        from .ssh_wrapper import connect_chain
+        connect_chain(info["_chain"]["jumps"], info["_chain"]["endpoint"])
+        return
     _resolve_jump_chain(info, master_password)
     if extra_args:
         stored = info.get("extra_args", [])
@@ -965,6 +966,10 @@ def main():
                                         "gui"):
         try:
             info = _try_load_file(file_path)
+            if "_chain" in info:
+                from .ssh_wrapper import connect_chain
+                connect_chain(info["_chain"]["jumps"], info["_chain"]["endpoint"])
+                return
             if info.get("hostname"):
                 if info.get("key_file"):
                     info["key_file"] = os.path.expanduser(info["key_file"])
