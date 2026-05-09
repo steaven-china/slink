@@ -385,7 +385,24 @@ def _resolve_jump_chain(info: dict, password: str):
 @click.option("--extra-args", "-X", multiple=True, help="Extra SSH arguments (repeatable)")
 @click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
 def connect_cmd(name, extra_args, master_password):
-    """Connect to a stored host via SSH."""
+    """Connect to a stored host or chain/host file via SSH."""
+    if os.path.isfile(name):
+        try:
+            info = _try_load_file(name)
+            if "_chain" in info:
+                from .ssh_wrapper import connect_chain
+                connect_chain(info["_chain"]["jumps"], info["_chain"]["endpoint"])
+                return
+            if info.get("hostname"):
+                if extra_args:
+                    stored = info.get("extra_args", [])
+                    info["extra_args"] = stored + list(extra_args)
+                ssh_connect(info)
+                return
+        except Exception as exc:
+            click.echo(f"Error loading file: {exc}", err=True)
+            sys.exit(1)
+
     if master_password is None:
         master_password = getpass("Master password: ")
     info = get_host(name, password=master_password)

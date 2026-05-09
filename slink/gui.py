@@ -10,7 +10,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 
 from .crypto import DecryptError
-from .ssh_wrapper import connect as ssh_connect
+import json
+
+from .ssh_wrapper import connect as ssh_connect, connect_chain
 from .store import add_host, get_host, list_hosts, remove_host, upsert_host
 
 
@@ -244,6 +246,8 @@ class SlinkGUI(tk.Tk):
             ("Delete (Del)", self._delete_host),
             ("Connect (Enter)", self._connect),
             ("Jump List (J)", self._jump_list),
+            ("Open Chain", self._open_chain),
+            ("Export Chain", self._export_chain),
         ]:
             tk.Button(btn_frame, text=label, command=cmd).pack(fill=tk.X, pady=2)
 
@@ -342,6 +346,9 @@ class SlinkGUI(tk.Tk):
             f"Password:  {'<set>' if info.get('password') else 'None'}",
             f"Extra:     {' '.join(info.get('extra_args', [])) or 'None'}",
         ]
+        jump_host = info.get("jump_host")
+        if jump_host:
+            lines.append(f"Jumps:     {', '.join(str(j) for j in jump_host)}")
         self.detail_text.config(state=tk.NORMAL)
         self.detail_text.delete("1.0", tk.END)
         self.detail_text.insert(tk.END, "\n".join(lines))
@@ -406,10 +413,97 @@ class SlinkGUI(tk.Tk):
         self.update_idletasks()
         def _do_connect():
             try:
-                ssh_connect(info)
+                if info.get("_chain"):
+                    connect_chain(info["_chain"]["jumps"], info["_chain"]["endpoint"])
+                else:
+                    ssh_connect(info)
             finally:
                 self.after(0, lambda: self.status_var.set("Ready"))
         threading.Thread(target=_do_connect, daemon=True).start()
+
+    def _open_chain(self):
+        path = filedialog.askopenfilename(
+            title="Open Chain File",
+            filetypes=[("Chain files", "*.chain *.chain.enc"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            from .cli import _try_load_file
+            loaded = _try_load_file(path)
+            if "_chain" in loaded:
+                self.status_var.set(f"Connecting chain {os.path.basename(path)}...")
+                self.update_idletasks()
+                def _do():
+                    try:
+                        connect_chain(loaded["_chain"]["jumps"], loaded["_chain"]["endpoint"])
+                    finally:
+                        self.after(0, lambda: self.status_var.set("Ready"))
+                threading.Thread(target=_do, daemon=True).start()
+            elif loaded.get("hostname"):
+                self.status_var.set(f"Connecting {os.path.basename(path)}...")
+                self.update_idletasks()
+                def _do():
+                    try:
+                        ssh_connect(loaded)
+                    finally:
+                        self.after(0, lambda: self.status_var.set("Ready"))
+                threading.Thread(target=_do, daemon=True).start()
+            else:
+                messagebox.showerror("Error", "Invalid chain or host file.")
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
+
+    @staticmethod
+    def _parse_jump_spec(spec: str) -> dict:
+        username = None
+        port = 22
+        if "@" in spec:
+            username, spec = spec.split("@", 1)
+        if ":" in spec:
+            spec, port_str = spec.rsplit(":", 1)
+            try:
+                port = int(port_str)
+            except ValueError:
+                pass
+        return {"hostname": spec, "username": username, "port": port}
+
+    def _export_chain(self):
+        if not self.selected_name:
+            messagebox.showwarning("Select", "Please select a host to export.")
+            return
+        info = self.hosts.get(self.selected_name, {})
+        endpoint = {
+            "hostname": info.get("hostname"),
+            "username": info.get("username"),
+            "port": info.get("port", 22),
+        }
+        jumps = []
+        for spec in info.get("jump_host", []):
+            jump_info = get_host(spec, password=self.password)
+            if jump_info:
+                jumps.append({
+                    "hostname": jump_info.get("hostname", spec),
+                    "username": jump_info.get("username"),
+                    "port": jump_info.get("port", 22),
+                })
+            else:
+                jumps.append(self._parse_jump_spec(spec))
+        chain_data = {"jumps": jumps, "endpoint": endpoint}
+        path = filedialog.asksaveasfilename(
+            title="Export as Chain",
+            defaultextension=".chain",
+            filetypes=[("Chain files", "*.chain"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(chain_data, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+            messagebox.showinfo("Exported", f"Chain saved to {path}")
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
 
     def _on_close(self):
         from .ssh_wrapper import terminate_all
