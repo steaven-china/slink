@@ -310,6 +310,55 @@ def connect_cmd(name, extra_args, master_password):
         sys.exit(1)
 
 
+@cli.command(name="tunnel")
+@click.argument("name", shell_complete=_complete_host_names)
+@click.option("-L", "--local-forward", multiple=True, help="Local port forward (format: [bind:]port:host:hostport)")
+@click.option("-R", "--remote-forward", multiple=True, help="Remote port forward")
+@click.option("-D", "--dynamic", default=None, help="SOCKS5 proxy port")
+@click.option("--master-password", envvar="SLINK_PASSWORD", default=None, help="Master password")
+def tunnel_cmd(name, local_forward, remote_forward, dynamic, master_password):
+    """Open SSH tunnels (port forwarding / SOCKS5) to a host."""
+    if os.path.isfile(name):
+        try:
+            info = api.load_file(name)
+            if "_chain" in info:
+                click.echo("Tunnel via chain is not yet supported.", err=True)
+                sys.exit(1)
+            if not info.get("hostname"):
+                click.echo("Invalid host file.", err=True)
+                sys.exit(1)
+        except Exception as exc:
+            click.echo(f"Error loading file: {exc}", err=True)
+            sys.exit(1)
+    else:
+        if master_password is None:
+            master_password = getpass("Master password: ")
+        info = get_host(name, password=master_password)
+        if not info:
+            click.echo(f"Host '{name}' not found.", err=True)
+            sys.exit(1)
+        api.resolve_jump_chain(info, master_password)
+
+    tunnel_args = ["-N", "-T"]
+    for spec in local_forward:
+        tunnel_args.extend(["-L", spec])
+    for spec in remote_forward:
+        tunnel_args.extend(["-R", spec])
+    if dynamic:
+        tunnel_args.extend(["-D", dynamic])
+
+    stored = info.get("extra_args", [])
+    if isinstance(stored, str):
+        stored = stored.split()
+    info["extra_args"] = stored + tunnel_args
+
+    try:
+        ssh_connect(info)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+
 @cli.command(name="edit")
 @click.argument("name", shell_complete=_complete_host_names)
 @click.option("--hostname", "-h", default=None, help="Remote host address")
