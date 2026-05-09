@@ -53,6 +53,9 @@ def _write_temp_key(key_data: str) -> str:
         raise
 
 
+ACTIVE_PROCS = []
+
+
 def connect(host_info: dict):
     """
     Build and execute an ssh command based on host_info.
@@ -116,6 +119,7 @@ def connect(host_info: dict):
 
     print(f"Connecting to {target} ...")
     tmp_path = None
+    proc = None
     try:
         if key:
             tmp_path = _write_temp_key(key)
@@ -126,8 +130,12 @@ def connect(host_info: dict):
         env = os.environ.copy()
         if use_sshpass:
             env["SSHPASS"] = password
-        subprocess.run(ssh_cmd, check=False, env=env)
+        proc = subprocess.Popen(ssh_cmd, env=env)
+        ACTIVE_PROCS.append(proc)
+        proc.wait()
     finally:
+        if proc and proc in ACTIVE_PROCS:
+            ACTIVE_PROCS.remove(proc)
         if tmp_path:
             try:
                 if sys.platform == "win32":
@@ -135,3 +143,17 @@ def connect(host_info: dict):
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def terminate_all():
+    """Terminate all active SSH processes."""
+    for proc in list(ACTIVE_PROCS):
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    ACTIVE_PROCS.clear()

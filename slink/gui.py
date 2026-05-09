@@ -199,6 +199,7 @@ class SlinkGUI(tk.Tk):
         self.hosts = {}
         self.selected_name = None
 
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_ui()
         self.after(50, self._ask_password)
 
