@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from slink import crypto
 
@@ -16,6 +17,13 @@ class TestCrypto(unittest.TestCase):
         crypto.AGENT_HOSTS_FILE = os.path.join(self.tmpdir.name, "agent_hosts.enc")
         crypto.AGENT_EXPIRES_FILE = os.path.join(self.tmpdir.name, "agent_expires")
         crypto.AGENT_SALT_FILE = os.path.join(self.tmpdir.name, "agent_salt")
+        # Fix salt to avoid intermittent InvalidToken failures in CI
+        patcher = patch.object(crypto, "_get_or_create_salt", return_value=b"x" * 16)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        agent_patcher = patch.object(crypto, "_get_agent_salt", return_value=b"a" * 16)
+        agent_patcher.start()
+        self.addCleanup(agent_patcher.stop)
 
     def test_derive_key_consistent(self):
         key1 = crypto._derive_key("password", b"salt" * 4)

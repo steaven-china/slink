@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from slink import crypto, store
 
@@ -19,6 +20,13 @@ class TestStore(unittest.TestCase):
         # Patch store paths
         store._LOCK_FILE = os.path.join(self.tmpdir.name, ".lock")
         store.SHOW_DIRECT_FILE = os.path.join(self.tmpdir.name, ".show_direct")
+        # Fix salt to avoid intermittent InvalidToken failures in CI
+        patcher = patch.object(crypto, "_get_or_create_salt", return_value=b"x" * 16)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        agent_patcher = patch.object(crypto, "_get_agent_salt", return_value=b"a" * 16)
+        agent_patcher.start()
+        self.addCleanup(agent_patcher.stop)
 
     def test_add_and_get_host(self):
         store.add_host("web1", {"hostname": "10.0.0.1", "port": 22}, password="pw")
