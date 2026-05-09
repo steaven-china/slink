@@ -1,6 +1,7 @@
 """Host group management for sli ml."""
 import os
 import stat
+import sys
 import tempfile
 
 from .crypto import DEFAULT_CONFIG_DIR

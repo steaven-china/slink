@@ -49,9 +49,11 @@ class TestCrypto(unittest.TestCase):
             crypto.decrypt_data(token, password="wrong")
 
     def test_save_load_hosts(self):
+        from unittest.mock import patch
         hosts = {"web1": {"hostname": "10.0.0.1", "port": 22}}
-        crypto.save_hosts(hosts, password="pw")
-        loaded = crypto.load_hosts(password="pw")
+        with patch.object(crypto, "_get_or_create_salt", return_value=b"x" * 16):
+            crypto.save_hosts(hosts, password="pw")
+            loaded = crypto.load_hosts(password="pw")
         self.assertEqual(loaded, hosts)
 
     def test_load_hosts_no_file(self):
