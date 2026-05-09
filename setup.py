@@ -16,6 +16,7 @@ setup(
     },
     python_requires=">=3.8",
     description="Secure SSH Connection Manager with encrypted storage",
+    license="LGPL-3.0",
     author="",
     author_email="",
 )

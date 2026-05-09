@@ -1,6 +1,6 @@
 # slink - Secure SSH Connection Manager
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPLv3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 
 A lightweight SSH connection manager that encrypts your connection info locally and lets you connect with a single command — no need to remember IPs or usernames.
 
@@ -220,7 +220,7 @@ python -m nuitka --standalone --enable-plugin=tk-inter --include-package=click -
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.  
+This project is licensed under the **GNU Lesser General Public License v3.0 (LGPL-3.0)**.  
 See [LICENSE](LICENSE) for details.
 
 ## Disclaimer

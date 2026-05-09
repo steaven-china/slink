@@ -1,8 +1,8 @@
 # License
 
-slink is licensed under the GNU General Public License v3.0 (GPL-3.0).
+slink is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0).
 
-See the full license text at: https://www.gnu.org/licenses/gpl-3.0
+See the full license text at: https://www.gnu.org/licenses/lgpl-3.0
 
 ## Third-Party Dependencies
 
